@@ -1,0 +1,4 @@
+(library
+  ((name        dist_closures)
+   (public_name dist-closures)
+   (libraries   (fmt logs))))

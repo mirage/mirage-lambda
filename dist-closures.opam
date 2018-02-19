@@ -1,0 +1,22 @@
+opam-version: "1.2"
+maintainer:   "Thomas Gazagnaire <thomas@gazagnaire.org>"
+authors:      ["Thomas Gazagnaire <thomas@gazagnaire.org>"]
+homepage:     "https://github.com/tweag/ocaml-dist-closures"
+dev-repo:     "https://github.com/tweag/ocaml-dist-closures.git"
+bug-reports:  "https://github.com/samoht/ocaml-dist-closures/issues"
+doc:          "https://tweag.github.io/ocaml-dist-closures/"
+license:      "ISC"
+tags:         ["org:mirage"]
+
+build: [
+  ["jbuilder" "subst"]
+  ["jbuilder" "build" "-j" jobs]
+]
+build-test: ["jbuilder" "runtest" "-j" jobs]
+
+depends: [
+  "jbuilder" {build & >= "1.0+beta10"}
+  "fmt"
+  "alcotest" {test}
+]
+available: [ ocaml-version >= "4.03.0"]

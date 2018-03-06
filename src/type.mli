@@ -72,6 +72,7 @@ val (!!): 'a t lazy_t -> 'a t
 
       let rec t = lazy (variant [case0 Nil; case1 (pair int !!t)])
       let t = !!t
+    ]}
     *)
 
 (** {1:records Records} *)
@@ -128,7 +129,7 @@ val case1: 'b t -> ('b -> 'a) -> 'a case
     {[
       type t = Foo of string
 
-      let foo = case1 string (fun s -> Foo s)]}
+      let foo = case1 string (fun s -> Foo s)
     ]}
 *)
 

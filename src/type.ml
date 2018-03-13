@@ -254,6 +254,14 @@ let option a = Option a
 let (@->) a b = Arrow (a, b)
 let (!!) x = Unlazy x
 
+let rec match_arrow: type a b. (a -> b) t -> (a t * b t) = function
+  | Arrow (a, b)     -> (a, b)
+  | Unlazy a         -> match_arrow (Lazy.force a)
+  | Tuple (Single a) -> match_arrow a
+  | Record _         -> assert false
+  | Variant _        -> assert false
+  | _ -> .
+
 (* records *)
 
 let field ftype fget = Field { ftype; fget }

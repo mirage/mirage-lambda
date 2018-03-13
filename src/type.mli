@@ -65,6 +65,9 @@ val triple: 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
 val (@->): 'a t -> 'b t -> ('a -> 'b) t
 (** [a @-> b] is a representation of functions of type [a -> b]. *)
 
+val match_arrow: ('a -> 'b) t -> ('a t * 'b t)
+(** [match_arrow a] is the pair [(x, y)] iff [x @-> y = a] *)
+
 val (!!): 'a t lazy_t -> 'a t
 (** [!!f] is useful to define cyclic types:
     {[

@@ -1,6 +1,6 @@
 (executable
   ((name test)
-   (libraries (lambda alcotest logs.fmt))))
+   (libraries (lambda alcotest logs.fmt lwt.unix))))
 
 (alias
  ((name runtest)

@@ -34,12 +34,12 @@
 
   let resolve_name v prims ctx =
     match index v ctx with
-    | Some i -> Untyped.var i
+    | Some i -> Parsetree.var i
     | None   ->
        if List.mem_assoc v prims then List.assoc v prims
        else err_unbound v prims ctx
 
-  open Untyped
+  open Parsetree
 %}
 
 %token <int> INT
@@ -69,15 +69,15 @@
 %left BAR
 
 %start main
-%type <(string * Untyped.expr) list -> (Untyped.expr, [`Msg of string]) result> main
-%type <(string * Untyped.expr) list -> string list -> Untyped.expr> expr
+%type <(string * Parsetree.expr) list -> (Parsetree.expr, string) result> main
+%type <(string * Parsetree.expr) list -> string list -> Parsetree.expr> expr
 
 %%
 
 main:
   | e=expr EOF { fun prims ->
                  try Ok (e prims [])
-                 with Internal s -> Error (`Msg s) }
+                 with Internal s -> Error s }
 
 expr:
   | LPAR e=expr RPAR        { e }
@@ -116,7 +116,7 @@ typ:
   | S_INT             { Type.int }
   | S_BOOL            { Type.bool }
   | S_STRING          { Type.string }
-  | a=typ ARROW b=typ { Type.lambda a b }
+  | a=typ ARROW b=typ { Type.(a @-> b) }
   | a=typ TIMES b=typ { Type.(a ** b) }
   | a=typ BAR b=typ   { Type.(a || b) }
   | LPAR a=typ RPAR   { a }

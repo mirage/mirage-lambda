@@ -20,111 +20,85 @@ let pp_infix ~infix pp_a pp_b ppf (a, b) =
 
 module Type = struct
 
-  type abstract = A: { name: string; wit: 'a Eq.Witness.t } -> abstract
-
-  let name (A a) = a.name
+  type abstract = A: 'a Eq.witness -> abstract
 
   type t =
+    | Unit
     | Int
     | Bool
     | String
-    | Abstract of abstract
-    | Lambda of t * t
+    | Lwt
+    | Apply of t * t
+    | Abstract of t list * abstract
+    | Arrow of t * t
     | Pair of t * t
     | Either of t * t
 
-  let rec pp ppf = function
-    | Int           -> Fmt.string ppf "int"
-    | Bool          -> Fmt.string ppf "bool"
-    | String        -> Fmt.string ppf "string"
-    | Abstract a    -> Fmt.string ppf (name a)
-    | Lambda (a, b) -> Fmt.pf ppf "%a" (pp_infix ~infix:"->" pp pp) (a, b)
-    | Pair (a, b)   -> Fmt.pf ppf "%a" (pp_infix ~infix:"*" pp pp) (a, b)
-    | Either (a, b) -> Fmt.pf ppf "%a" (pp_infix ~infix:"|" pp pp) (a, b)
+  let pp_abstract ppf (A a) = Fmt.string ppf a.name
 
+  let rec pp ppf = function
+    | Unit            -> Fmt.string ppf "unit"
+    | Int             -> Fmt.string ppf "int"
+    | Bool            -> Fmt.string ppf "bool"
+    | String          -> Fmt.string ppf "string"
+    | Lwt             -> Fmt.pf ppf "Lwt.t"
+    | Apply (a, b)    -> Fmt.pf ppf "@[(%a %a)@]" pp a pp b
+    | Abstract (a, b) -> Fmt.pf ppf "@[%a%a@]" pp_params a pp_abstract b
+    | Arrow (a, b)    -> Fmt.pf ppf "%a" (pp_infix ~infix:"->" pp pp) (a, b)
+    | Pair (a, b)     -> Fmt.pf ppf "%a" (pp_infix ~infix:"*" pp pp) (a, b)
+    | Either (a, b)   -> Fmt.pf ppf "%a" (pp_infix ~infix:"|" pp pp) (a, b)
+
+  and pp_params ppf = function
+    | []  -> ()
+    | [x] -> Fmt.pf ppf "%a " pp x
+    | l   -> Fmt.pf ppf "(%a)" Fmt.(list ~sep:(unit ", ") pp) l
+
+  let unit = Unit
   let int = Int
   let bool = Bool
   let string = String
-  let lambda a b = Lambda (a, b)
-  let either a b = Either (a, b)
-  let ( ** ) a b = Pair (a, b)
-  let ( @->) = lambda
-  let ( || ) = either
+  let lwt = Lwt
 
-  let abstract name =
-    let wit = Eq.Witness.v () in
-    Abstract (A {name; wit})
+  let arrow a b = Arrow (a, b)
+  let either a b = Either (a, b)
+  let abstract a ps = Abstract (ps, A a)
+  let apply a b = Apply (a, b)
+
+  let ( ** ) a b = Pair (a, b)
+  let ( @->) = arrow
+  let ( || ) = either
 
 end
 
 type typ = Type.t
 
-module Param = struct
+type value = V: { v: 'a; t: 'a T.t; pp: 'a Fmt.t } -> value
 
-  type abstract =
-    | Abs: { name: string; v: 'a; wit : 'a Eq.Witness.t } -> abstract
-
-  type t =
-    | Int of int
-    | Bool of bool
-    | String of string
-    | Abstract of abstract
-    | Pair of t * t
-    | Either of Type.t * either
-    | Lambda of { typ: Type.t * Type.t
-                ; exp: (t -> t) }
-
-  and either = L of t | R of t
-
-  let pp_abstract ppf (Abs a) = Fmt.pf ppf "<abstract:%s>" a.name
-
-  let rec pp ppf = function
-    | Int n           -> Fmt.pf ppf "%d" n
-    | Bool b          -> Fmt.pf ppf "%b" b
-    | String s        -> Fmt.pf ppf "%s" s
-    | Abstract a      -> pp_abstract ppf a
-    | Pair (a, b)     -> Fmt.pf ppf "%a" (Fmt.Dump.pair pp pp) (a, b)
-    | Either (_, L x) -> Fmt.pf ppf "@[<1>(L@ %a)@]" pp x
-    | Either (_, R x) -> Fmt.pf ppf "@[<1>(R@ %a)@]" pp x
-    | Lambda { typ = (ta, tb); _ } ->
-      Fmt.pf ppf "@[<hov>#lambda:%a@]" Type.pp (Lambda (ta, tb))
-
-  let int i = Int i
-  let bool b = Bool b
-  let string s = String s
-  let pair a b = Pair (a, b)
-  let either t e = Either (t, e)
-  let lambda i o exp = Lambda { typ = (i, o); exp }
-
-  let ( ** ) = pair
-
-end
-
-type param = Param.t
+let pp_value ppf (V t) = t.pp ppf t.v
 
 type arithmetic = [ `Add | `Sub | `Mul | `Div ]
 
 type primitive =
   { name : string
-  ; typ  : Type.t list * Type.t
-  ; exp  : param list -> param }
+  ; typ  : typ list * typ
+  ; exp  : value list -> value }
 and binop =
   [ arithmetic | `Pair | `Eq ]
 and unop =
-  | Fst | Snd | L of Type.t | R of Type.t
+  | Fst | Snd | L of typ | R of typ
 and expr =
-  | Con of Param.t
+  | Val of value
   | Prm of primitive
   | Var of var
-  | Abs of Type.t * string * expr
+  | Abs of typ * string * expr
   | App of expr * expr
   | Bin of binop * expr * expr
   | Uno of unop * expr
-  | Let of Type.t * expr * expr
+  | Let of typ * expr * expr
   | Swt of { a : expr
            ; b : expr
            ; s : expr }
-  | Rec of Type.t * expr * expr
+  | Rec of typ * expr * expr
   | If  of expr * expr * expr
 and var = {
   id : int;
@@ -139,14 +113,15 @@ let pp ppf t =
     | Var n ->
       let name = List.nth ctx n.id in
       Fmt.pf ppf "%s$%d" name n.id
-    | Con c -> Fmt.pf ppf "%a" Param.pp c
+    | Val c -> pp_value ppf c
     | Prm { name; typ = (a, r); _ } ->
+      let params = List.fold_right (fun x a -> Type.Arrow (x, a)) a r in
       Fmt.pf ppf "(@[<1>#%s@ @[%a@]@])"
-        name
-        Type.pp (List.fold_right (fun x a -> Type.Lambda (x, a)) a r)
+        name Type.pp params
     | Abs (t, name, e) ->
       let pp = aux (name :: ctx) in
-      Fmt.pf ppf "@[<2>(fun @[(%s:@ %a)@]@ ->@ @[<2>%a@])@]" name Type.pp t pp e
+      Fmt.pf ppf "@[<2>(fun @[(%s:@ %a)@]@ ->@ @[<2>%a@])@]"
+        name Type.pp t pp e
     | App (f, a) ->
       Fmt.pf ppf "@[@[%a@]@ @[%a@]@]" pp f pp a
     | Bin (`Add, a, b) ->
@@ -184,23 +159,21 @@ let pp ppf t =
   in
   aux [] ppf t
 
-let int n = Con (Int n)
-let string s = Con (String s)
+let value v t pp = Val (V {v; t; pp})
+
+let unit = value () Unit (fun ppf () -> Fmt.pf ppf "()")
+let int n = value n Int Fmt.int
+let string s = value s String Fmt.string
 let pair a b = Bin (`Pair, a, b)
 let lambda t name f = Abs (t, name, f)
 let apply f a = App (f, a)
 let fix ~typ ~init s = Rec (typ, init, s)
 let var id = Var { id }
 let match_ s a b = Swt {a; b; s}
-let bool b = Con (Bool b)
+let bool b = value b Bool Fmt.bool
 let true_ = bool true
 let false_ = bool false
 let let_ t x y = Let (t, x, y)
-
-let ( = ) a b = Bin (`Eq, a, b)
-let ( + ) a b = Bin (`Add, a, b)
-let ( * ) a b = Bin (`Mul, a, b)
-let ( - ) a b = Bin (`Sub, a, b)
 
 let if_ t a b = If (t, a, b)
 let left rtyp x = Uno (L rtyp, x)
@@ -209,3 +182,42 @@ let fst x = Uno (Fst, x)
 let snd x = Uno (Snd, x)
 
 let primitive name inputs output exp = Prm {name; typ = (inputs, output); exp}
+
+let equal a b =
+  let rec aux k a b = match a, b with
+    | Var a    , Var b     -> k (a.id = b.id)
+    | Val (V a), Val (V b) ->
+      (match T.eq a.t b.t with
+       | Some Eq.Refl -> k (a.v = b.v)
+       | None          -> k false)
+    | Prm a, Prm b -> k (a.name = b.name && a.typ = b.typ)
+    | Abs (a, b, c), Abs (d, e, f) ->
+      aux (fun x -> k (x && a=d && b=e)) c f
+    | App (a, b), App (c, d) ->
+      aux (fun x -> aux (fun y -> k @@ x && y) a c) b d
+    | Bin (a, b, c), Bin (d, e, f) ->
+      aux (fun x -> aux (fun y -> k @@ x && y && a=d) b e) c f
+    | Uno (a, b), Uno (c, d) ->
+      aux (fun x -> x && k (a=c)) b d
+    | Let (a, b, c), Let (d, e, f) ->
+      aux (fun x -> aux (fun y -> k @@ x && y && a=d) b e) c f
+    | Swt a, Swt b ->
+      aux (fun x -> x && aux (fun y ->
+          aux (fun z -> k @@ x && y && z) a.a b.a
+        ) a.b b.b) a.s b.s
+    | Rec (a, b, c), Rec (d, e, f) ->
+      aux (fun x -> aux (fun y -> k @@ x && y && a=d) b e) c f
+    | If (a, b, c), If (d, e, f) ->
+      aux (fun x -> aux (fun y ->
+          aux (fun z -> k @@ x && y && z) a d
+        ) b e) c f
+    | Var _, _ | Val _, _ | Prm _, _ | Abs _, _ | App _, _
+    | Bin _, _ | Uno _, _ | Let _, _ | Swt _, _ | Rec _, _
+    | If _, _ -> false
+  in
+  aux (fun x -> x) a b
+
+let ( = ) a b = Bin (`Eq, a, b)
+let ( + ) a b = Bin (`Add, a, b)
+let ( * ) a b = Bin (`Mul, a, b)
+let ( - ) a b = Bin (`Sub, a, b)

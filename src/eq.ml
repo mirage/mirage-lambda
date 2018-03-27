@@ -40,13 +40,6 @@ let pair
     | Some Refl -> Some Refl
     | None -> None
 
-let star
-  : type a b c d. (a, b) refl -> (c, d) refl option ->
-    (a * c, b * d) refl option
-  = fun Refl -> function
-    | Some Refl -> Some Refl
-    | None -> None
-
 let either
   : type a b c d. (a, b) refl -> (c, d) refl option ->
     ((a, c) either, (b, d) either) refl option
@@ -87,7 +80,7 @@ let ( >*= )
     -> (a * c, b * d) refl option
 
   = fun x f -> match x with
-    | Some (Refl as x) -> star x (f x)
+    | Some (Refl as x) -> pair x (f x)
     | None -> None
 
 let ( >?= )
@@ -132,3 +125,9 @@ end = struct
       | _    -> None
 
 end
+
+type 'a witness = { name: string; wit : 'a Witness.t }
+
+let witness name =
+  let wit = Witness.v () in
+  {name; wit}

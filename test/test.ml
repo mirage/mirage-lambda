@@ -37,19 +37,19 @@ let () =
 
 open Lambda
 
-let uexpr = Alcotest.testable Untyped.pp (=)
+let pexpr = Alcotest.testable Parsetree.pp Parsetree.equal
 let error = Alcotest.testable pp_error (=)
 let ok x = Alcotest.result x error
 
 let test_if () =
-  let x = Untyped.(if_ true_ (int 42) (int 21)) in
+  let x = Parsetree.(if_ true_ (int 42) (int 21)) in
   Alcotest.(check @@ ok int) "if" (Ok 42) (type_and_eval x Type.int);
   Alcotest.(check @@ neg @@ ok string) "failure" (Ok "")
     (type_and_eval x Type.string)
 
 let test_match () =
   let x =
-    let open Untyped in
+    let open Parsetree in
     match_ (left Type.int (string "Hello World!"))
       (var 0)
       (string "<int>")
@@ -61,7 +61,7 @@ let test_match () =
 
 let test_lambda () =
   let x =
-    let open Untyped in
+    let open Parsetree in
     apply (
       apply (
         lambda Type.int "x" (
@@ -112,7 +112,7 @@ let test_fact () =
   Alcotest.(check @@ int) "safe" 120 (Expr.eval safe () 5);
 
   let unsafe =
-    let open Untyped in
+    let open Parsetree in
     let main =
       let typ = Type.((int @-> int) ** int) in
       fix ~typ ~init:(pair (lambda Type.int "x" (int 1)) (var 0))
@@ -145,7 +145,7 @@ let test_prim () =
     (type_and_eval padebool Type.(int @-> bool @-> int) $ 0 $ true);
 
   let env_and_prim =
-    let open Untyped in
+    let open Parsetree in
     (lambda Type.string "x" (apply (apply padd (int 21)) (int 21)))
   in
 
@@ -153,7 +153,7 @@ let test_prim () =
     (type_and_eval env_and_prim Type.(string @-> int) $ "Hello World!");
   Alcotest.(check @@ ok int) "env_and_prim unsafe" (Ok 42)
     (type_and_eval
-       Untyped.(lambda Type.int "x" env_and_prim)
+       Parsetree.(lambda Type.int "x" env_and_prim)
        Type.(int @-> string @-> int)
      $ 0 $ "Hello World!")
 
@@ -165,10 +165,10 @@ let test_parse_expr () =
   let check s (a, t) r =
     let e = parse_exn s in
     Alcotest.(check @@ ok a) ("parse: " ^ s) (Ok r) (type_and_eval e t);
-    let s' = Fmt.to_to_string Untyped.pp e in
+    let s' = Fmt.to_to_string Parsetree.pp e in
     Logs.debug (fun l -> l "roundtrip: %s => %s" s s');
     let e' = parse_exn s' in
-    Alcotest.(check @@ uexpr) ("roundtrip: " ^ s') e e'
+    Alcotest.(check @@ pexpr) ("roundtrip: " ^ s') e e'
   in
   let int = (Alcotest.int, Type.int) in
   let bool = (Alcotest.bool, Type.bool) in
@@ -188,7 +188,7 @@ let test_ping () =
   let app t f x =
     let f = parse_exn f in
     let x = parse_exn x in
-    match type_and_eval Untyped.(apply f x) t with
+    match type_and_eval Parsetree.(apply f x) t with
     | Ok x    -> Fmt.to_to_string (Type.pp_val t) x
     | Error e -> Fmt.failwith "%a" pp_error e
   in
@@ -202,39 +202,42 @@ let test_primitives () =
   Alcotest.(check @@ ok string) "safe" (Ok "10")
     (type_and_eval (parse_exn ~primitives "string_of_int 10") Type.string)
 
-module Lwt: sig
-  type +'a t
-  (*    val (>>=): 'a t -> ('a -> 'b) t -> 'b t *)
-  val return: 'a -> 'a t
-end = struct
-  type 'a t = 'a
-  (*    let (>>=) x f = f x *)
-  let return x = x
-end
-
 module Block: sig
   type t
   val pp: t Fmt.t
   type error
   val connect: string -> t
-  val read: t -> int64 -> string list -> (unit, error) result Lwt.t
+  val read: t -> int (* -> string list *) -> (* (unit, error) result *) unit Lwt.t
 end = struct
   type error = [ `Foo ]
   type t = C of string
   let pp ppf (C t) = Fmt.pf ppf "(C %S)" t
   let connect n = C n
 
-  let read (C n) off pages =
+  let read (C n) off (* pages *) =
     Logs.debug (fun l ->
-        l "READ[%s] off=%Ld pages=%a" n off Fmt.(Dump.list string) pages);
-    if Random.int 3 = 0 then Lwt.return (Error `Foo) else Lwt.return (Ok ())
+        l "READ[%s] off=%d pages=<..>" n off (* Fmt.(Dump.list string) pages*));
+    (* if off = 0 then Lwt.return (Error `Foo) else Lwt.return (Ok ()) *)
+    Lwt.return ()
+
 end
+
+module List = struct
+  include List
+  type 'a t = 'a list
+end
+
+let lwt_t a =
+  Alcotest.testable
+    (fun ppf x -> Alcotest.pp a ppf (Lwt_main.run x))
+    (fun x y -> Alcotest.equal a (Lwt_main.run x) (Lwt_main.run y))
 
 let test_block () =
   let t = Type.abstract "Block.t" in
   let primitives = [
     primitive "Block.connect" [Type.string] t Block.connect;
     primitive "Block.to_string" [t] Type.string (Fmt.to_to_string Block.pp);
+    L.primitive "Block.read" Type.[t; int] Type.(lwt unit) Block.read
   ] in
   let t_t = Alcotest.testable Block.pp (=) in
   Alcotest.(check @@ ok t_t) "Block.connect"
@@ -245,6 +248,11 @@ let test_block () =
     (type_and_eval
        (parse_exn ~primitives "Block.to_string (Block.connect \"foo\")")
        Type.string);
+  Alcotest.(check @@ ok (lwt_t unit)) "read_exn"
+    (Ok (Lwt.return ()))
+    (L.type_and_eval
+       (parse_exn ~primitives "Block.read (Block.connect \"foo\") 1")
+       Type.(lwt unit));
 
   let _ = Block.read in
   ()

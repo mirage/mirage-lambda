@@ -36,59 +36,63 @@ let parse ?(file="<none>") ?(primitives=[]) str =
   in
   match Parser.main Lexer.(token @@ v ()) lexbuf primitives with
   | Ok _ as x                 -> x
-  | Error (`Msg e)            -> err e
+  | Error e                   -> err e
   | exception Lexer.Error msg -> err msg
   | exception Parser.Error    -> err "syntax error"
 
 (* Typer *)
 
-module Untyped = Untyped
-module Type = Typed.Type
-module Var = Typed.Var
-module Expr = Typed.Expr
+module Parsetree = Parsetree
 
-type 'a typ = 'a Typed.Type.t
-type expr = Typed.Expr.e
-type value = Typed.Expr.v
+module Type = Typedtree.Type
+module Var = Typedtree.Var
+module Expr = Typedtree.Expr
 
-type error = Typed.Expr.error
-let pp_error = Typed.Expr.pp_error
+let typ = Typedtree.typ
+
+type 'a typ = 'a Type.t
+type expr = Typedtree.expr
+type value = Typedtree.v
+
+type error = Typedtree.error
+let pp_error = Typedtree.pp_error
 
 let ( $ ) f x = match f with Ok f -> Ok (f x) | Error e -> Error e
 
 let eval e =
-  let open Typed.Expr in
-  let E (m, t) = e in
-  V (eval m (), t)
+  let open Expr in
+  let Typedtree.E (m, t) = e in
+  Typedtree.V (eval m (), t)
 
 let cast: type a. value -> a typ -> a option = fun v t' ->
-  let Typed.Expr.V (v, t) = v in
-  match Typed.Type.eq t t' with
+  let Typedtree.V (v, t) = v in
+  match Type.eq t t' with
   | Some Eq.Refl -> Some v
   | None         -> None
 
-let typ = Typed.Expr.typ
-
 let type_and_eval:
-  type a. Untyped.expr -> a typ -> (a, error) result = fun m t' ->
-  match Typed.Expr.typ m with
+  type a. Parsetree.expr -> a typ -> (a, error) result = fun m t' ->
+  match Typedtree.typ m with
   | Error _ as e -> e
   | Ok e         ->
-    let open Typed in
-    let Expr.V (v, t) = eval e in
+    let Typedtree.V (v, t) = eval e in
     match Type.eq t t' with
     | Some Eq.Refl -> Ok v
-    | None   -> Error (m, [], [ TypMismatch { a = Type.V t; b = Type.V t' } ])
+    | None   -> Typedtree.err_type_mismatch m t t'
+
+module Args = struct
+
+  type ('a, 'res) t =
+    | []   : ('res, 'res) t
+    | (::) : 'a typ * ('k, 'res) t -> ('a -> 'k, 'res) t
+
+end
 
 module Primitive = struct
 
-  type ('a, 'res) args =
-    | []   : ('res, 'res) args
-    | (::) : 'a typ * ('k, 'res) args -> ('a -> 'k, 'res) args
-
   type ('f, 'a) t = {
     name  : string;
-    args  : ('f, 'a) args;
+    args  : ('f, 'a) Args.t;
     output: 'a typ;
     body  : 'f;
   }
@@ -96,31 +100,101 @@ module Primitive = struct
   let v name args output body = { name; args; output; body }
 
   let untype_args args =
+    let open Args in
     let rec aux:
-      type a b. Untyped.typ list -> (a, b) args -> Untyped.typ list
+      type a b. Parsetree.typ list -> (a, b) Args.t -> Parsetree.typ list
       = fun acc -> function
         | []   -> List.rev acc
-        | h::t -> aux (Typed.Type.untype h :: acc) t
+        | h::t -> aux (Type.untype h :: acc) t
     in
     aux args
 
   let rec apply:
-    type a b. (a, b) args -> a -> Untyped.param list -> b * (b, b) args
+    type a b. (a, b) Args.t -> a -> Parsetree.value list -> b * (b, b) Args.t
     = fun args f params ->
+      let open Args in
       match args, params with
       | []  , []   -> f, []
-      | a::b, h::t -> apply b (f @@ Typed.Param.cast h a) t
+      | a::b, h::t -> apply b (f @@ Typedtree.Value.cast h a) t
       | _          -> failwith "invalid arity"
 
   let untype v =
     let inputs = untype_args [] v.args in
-    Untyped.primitive v.name inputs (Typed.Type.untype v.output) (fun l ->
+    Parsetree.primitive v.name inputs (Type.untype v.output) (fun l ->
         let r, _ = apply v.args v.body l in
-        Typed.Param.untype v.output r
+        Typedtree.Value.untype v.output r
       )
 end
 
-type primitive = string * Untyped.expr
+module Primitive_lwt = struct
+
+  (* XXX(samoht): there's probably a better way then to duplicate the
+     module, but I didn't find it. *)
+
+  type ('f, 'a) t = {
+    name  : string;
+    args  : ('f, 'a Lwt.t) Args.t;
+    output: ('a, Type.lwt) Type.app typ;
+    body  : 'f;
+  }
+
+  let v name args output body = { name; args; output; body }
+
+  let untype_args args =
+    let open Args in
+    let rec aux:
+      type a b. Parsetree.typ list -> (a, b) Args.t -> Parsetree.typ list
+      = fun acc -> function
+        | []   -> List.rev acc
+        | h::t -> aux (Type.untype h :: acc) t
+    in
+    aux args
+
+  let rec apply:
+    type a b. (a, b) Args.t -> a -> Parsetree.value list -> b * (b, b) Args.t
+    = fun args f params ->
+      let open Args in
+      match args, params with
+      | []  , []   -> f, []
+      | a::b, h::t -> apply b (f @@ Typedtree.Value.cast h a) t
+      | _          -> failwith "invalid arity"
+
+  let untype v =
+    let inputs = untype_args [] v.args in
+    Parsetree.primitive v.name inputs (Type.untype v.output) (fun l ->
+        let r, _ = apply v.args v.body l in
+        Typedtree.Value.untype v.output (Higher.Lwt.inj r)
+      )
+end
+
+type primitive = string * Parsetree.expr
 
 let primitive name args out f =
   name, Primitive.(v name args out f |> untype)
+
+module L = struct
+
+  let primitive name args out f =
+    name, Primitive_lwt.(v name args out f |> untype)
+
+  let cast
+    : type a. value -> (a, Type.lwt) Type.app typ -> a Lwt.t option
+    = fun v t' ->
+      let Typedtree.V (v, t) = v in
+      match Type.eq t t' with
+      | Some Eq.Refl -> Some (Higher.Lwt.prj v)
+      | None         -> None
+
+  let type_and_eval
+    : type a. Parsetree.expr -> (a, Type.lwt) Type.app typ ->
+      (a Lwt.t, error) result
+    = fun m t' ->
+    match Typedtree.typ m with
+    | Error _ as e -> e
+    | Ok e         ->
+      let Typedtree.V (v, t) = eval e in
+      match Type.eq t t' with
+      | Some Eq.Refl -> Ok (Higher.Lwt.prj v)
+      | None   -> Typedtree.err_type_mismatch m t t'
+
+end

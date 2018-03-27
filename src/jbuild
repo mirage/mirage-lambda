@@ -1,0 +1,10 @@
+(library
+ ((name        lambda)
+  (public_name lambda)
+  (libraries   (fmt logs))))
+
+(ocamllex (lexer))
+
+(menhir
+ ((flags   (--explain))
+  (modules (parser))))

@@ -1,0 +1,9 @@
+(executable
+  ((name test)
+   (libraries (lambda alcotest logs.fmt))))
+
+(alias
+ ((name runtest)
+  (package lambda)
+  (deps (test.exe))
+  (action (run ${exe:test.exe} -q --color=always))))

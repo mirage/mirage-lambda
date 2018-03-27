@@ -1,0 +1,17 @@
+opam-version: "1.2"
+maintainer: "Thomas Gazagnaire <thomas@gazagnaire.org>"
+homepage: "https://github.com/samoht/mirage-lambda"
+license: "ISC"
+dev-repo: "https://github.com/samoht/mirage-lambda.git"
+bug-reports: "https://github.com/samoht/mirage-lambda/issues"
+
+build: [ "jbuilder" "build" ]
+depends: [
+  "jbuilder" {build}
+  "fmt"
+  "logs"
+  "alcotest" {test}
+]
+available: [
+  ocaml-version >= "4.06.0"
+]

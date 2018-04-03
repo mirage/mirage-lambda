@@ -61,11 +61,11 @@ type expr = private
   | Val of value
   | Prm of primitive
   | Var of var
-  | Abs of typ * string * expr
+  | Lam of typ * string * expr
   | App of expr * expr
   | Bin of binop * expr * expr
   | Uno of unop * expr
-  | Let of typ * expr * expr
+  | Let of typ * string * expr * expr
   | Swt of { a : expr
            ; b : expr
            ; s : expr }
@@ -92,7 +92,7 @@ val true_: expr
 val false_: expr
 val value: 'a -> 'a T.t -> 'a Fmt.t -> expr
 
-val lambda: typ -> string -> expr -> expr
+val lambda: (string * typ) list -> expr -> expr
 
 val pair: expr -> expr -> expr
 
@@ -102,9 +102,11 @@ val snd: expr -> expr
 val left: typ -> expr -> expr
 val right: typ -> expr -> expr
 
+val let_var: typ -> string -> expr -> expr -> expr
+val let_fun: typ -> string -> (string * typ) list -> expr -> expr -> expr
+
 val if_: expr -> expr -> expr -> expr
 val match_: expr -> expr -> expr -> expr
-val let_: typ -> expr -> expr -> expr
 val apply: expr -> expr -> expr
 val fix: typ:typ -> init:expr -> expr -> expr
 

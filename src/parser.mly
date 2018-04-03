@@ -39,6 +39,8 @@
        if List.mem_assoc v prims then List.assoc v prims
        else err_unbound v prims ctx
 
+  let add_ctx a ctx = List.rev_map fst a @ ctx
+
   open Parsetree
 %}
 
@@ -48,19 +50,21 @@
 
 %token PLUS MINUS
 %token TIMES
-%token EQ
+%token EQ SEMICOLON COLON
 %token EOF
-%token LPAR RPAR
+%token LPAR RPAR LCUR RCUR
 %token FUN
+%token COMMA
 %token APP
-%token COLON DOLLAR
+%token DOLLAR
 
 %token S_INT S_BOOL S_STRING
 %token ARROW BAR
 
+%left SEMICOLON
 %left ARROW
 
-%nonassoc VAR INT STRING LPAR FUN BOOL
+%nonassoc VAR INT STRING LPAR BOOL S_INT S_BOOL S_STRING
 %nonassoc APP
 
 %left EQ
@@ -84,6 +88,21 @@ expr:
   | i=INT                   { fun _ _   -> int i }
   | s=STRING                { fun _ _   -> string s }
   | b=BOOL                  { fun _ _   -> if b then true_ else false_ }
+  | t=typ v=VAR EQ e=expr SEMICOLON b=expr
+    { fun prims ctx ->
+        let e = e prims ctx in
+        let b = b prims (v::ctx) in
+        let_var t v e b }
+  | t=typ n=VAR LPAR a=args RPAR LCUR e=expr RCUR SEMICOLON b=expr
+    { fun prims ctx ->
+        let e = e prims (add_ctx a ctx) in
+        let b = b prims (n :: ctx) in
+        let_fun t n a e b
+    }
+  | LPAR FUN LPAR a=args RPAR LCUR e=expr RCUR RPAR
+    { fun prims ctx ->
+        let e = e prims (add_ctx a ctx) in
+        lambda a e }
   | v=VAR                   { resolve_name v }
   | v=VAR DOLLAR i=INT      {
       fun prims ctx ->
@@ -95,11 +114,6 @@ expr:
       let a = a prims ctx in
       let b = b prims ctx in
       f a b }
-  | FUN LPAR n=VAR COLON t=typ RPAR ARROW e=expr
-    { fun prims ctx ->
-      let ctx = n :: ctx in
-      Logs.debug (fun l -> l "LAMBDA %s %a" n Fmt.(Dump.list string) ctx) ;
-      lambda t n (e prims ctx) }
   | f=expr x=expr %prec APP {
       fun prims ctx ->
       let f = f prims ctx in
@@ -120,3 +134,9 @@ typ:
   | a=typ TIMES b=typ { Type.(a ** b) }
   | a=typ BAR b=typ   { Type.(a || b) }
   | LPAR a=typ RPAR   { a }
+
+args:
+  | x=separated_nonempty_list(COMMA, arg) {x}
+
+arg:
+  | v=VAR COLON t=typ { (v, t) }

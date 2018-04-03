@@ -90,11 +90,11 @@ and expr =
   | Val of value
   | Prm of primitive
   | Var of var
-  | Abs of typ * string * expr
+  | Lam of typ * string * expr
   | App of expr * expr
   | Bin of binop * expr * expr
   | Uno of unop * expr
-  | Let of typ * expr * expr
+  | Let of typ * string * expr * expr
   | Swt of { a : expr
            ; b : expr
            ; s : expr }
@@ -110,17 +110,15 @@ let pp ppf t =
   let rec aux ctx ppf t =
     let pp = aux ctx in
     match t with
-    | Var n ->
-      let name = List.nth ctx n.id in
-      Fmt.pf ppf "%s$%d" name n.id
-    | Val c -> pp_value ppf c
+    | Var n -> Fmt.pf ppf "%s$%d" (List.nth ctx n.id) n.id
+    | Val c  -> pp_value ppf c
     | Prm { name; typ = (a, r); _ } ->
       let params = List.fold_right (fun x a -> Type.Arrow (x, a)) a r in
       Fmt.pf ppf "(@[<1>#%s@ @[%a@]@])"
         name Type.pp params
-    | Abs (t, name, e) ->
+    | Lam (t, name, e) ->
       let pp = aux (name :: ctx) in
-      Fmt.pf ppf "@[<2>(fun @[(%s:@ %a)@]@ ->@ @[<2>%a@])@]"
+      Fmt.pf ppf "@[<2>(fun @[(%s:@ %a)@]@ {@[<2>%a@]})@]"
         name Type.pp t pp e
     | App (f, a) ->
       Fmt.pf ppf "@[@[%a@]@ @[%a@]@]" pp f pp a
@@ -144,9 +142,10 @@ let pp ppf t =
       Fmt.pf ppf "@[<2>(L@ @[%a@])@]" pp a
     | Uno (R _, a) ->
       Fmt.pf ppf "@[<2>(R@ @[%a@])@]" pp a
-    | Let (t, v, f) ->
-      Fmt.pf ppf "@[<2>let @[$1 : %a@] =@ @[%a@] in@ @[%a@]@]"
-        (Fmt.hvbox Type.pp) t (Fmt.hvbox pp) v (Fmt.hvbox pp) f
+    | Let (t, n, v, f) ->
+      let pp' = aux (n :: ctx) in
+      Fmt.pf ppf "@[<2>let @[%s : %a@] =@ @[%a@] in@ @[%a@]@]"
+        n (Fmt.hvbox Type.pp) t (Fmt.hvbox pp) v (Fmt.hvbox pp') f
     | Swt { a; b; s; } ->
       Fmt.pf ppf "@[<2>@[match %a with@\n| @[<2>@[L $1@] ->@ \
                   @[%a@]@]@\n| @[<2>@[R $1@] ->@ @[%a@]@]@]@]"
@@ -165,7 +164,6 @@ let unit = value () Unit (fun ppf () -> Fmt.pf ppf "()")
 let int n = value n Int Fmt.int
 let string s = value s String Fmt.string
 let pair a b = Bin (`Pair, a, b)
-let lambda t name f = Abs (t, name, f)
 let apply f a = App (f, a)
 let fix ~typ ~init s = Rec (typ, init, s)
 let var id = Var { id }
@@ -173,13 +171,22 @@ let match_ s a b = Swt {a; b; s}
 let bool b = value b Bool Fmt.bool
 let true_ = bool true
 let false_ = bool false
-let let_ t x y = Let (t, x, y)
+
+let lambda args e =
+  List.fold_right (fun (name, t) acc -> Lam (t, name, acc)) args e
 
 let if_ t a b = If (t, a, b)
 let left rtyp x = Uno (L rtyp, x)
 let right ltyp x = Uno (R ltyp, x)
 let fst x = Uno (Fst, x)
 let snd x = Uno (Snd, x)
+
+let let_var t n x y = Let (t, n, x, y)
+
+let let_fun t n args e body =
+  let t = List.fold_right (fun (_, t) acc -> Type.Arrow (t, acc)) args t in
+  let e = List.fold_right (fun (n, t) acc -> Lam (t, n, acc)) args e in
+  Let (t, n, e, body)
 
 let primitive name inputs output exp = Prm {name; typ = (inputs, output); exp}
 
@@ -191,7 +198,7 @@ let equal a b =
        | Some Eq.Refl -> k (a.v = b.v)
        | None          -> k false)
     | Prm a, Prm b -> k (a.name = b.name && a.typ = b.typ)
-    | Abs (a, b, c), Abs (d, e, f) ->
+    | Lam (a, b, c), Lam (d, e, f) ->
       aux (fun x -> k (x && a=d && b=e)) c f
     | App (a, b), App (c, d) ->
       aux (fun x -> aux (fun y -> k @@ x && y) a c) b d
@@ -199,8 +206,8 @@ let equal a b =
       aux (fun x -> aux (fun y -> k @@ x && y && a=d) b e) c f
     | Uno (a, b), Uno (c, d) ->
       aux (fun x -> x && k (a=c)) b d
-    | Let (a, b, c), Let (d, e, f) ->
-      aux (fun x -> aux (fun y -> k @@ x && y && a=d) b e) c f
+    | Let (a, n, b, c), Let (d, m, e, f) ->
+      aux (fun x -> aux (fun y -> k @@ x && y && a=d && n=m) b e) c f
     | Swt a, Swt b ->
       aux (fun x -> x && aux (fun y ->
           aux (fun z -> k @@ x && y && z) a.a b.a
@@ -211,7 +218,7 @@ let equal a b =
       aux (fun x -> aux (fun y ->
           aux (fun z -> k @@ x && y && z) a d
         ) b e) c f
-    | Var _, _ | Val _, _ | Prm _, _ | Abs _, _ | App _, _
+    | Var _, _ | Val _, _ | Prm _, _ | Lam _, _ | App _, _
     | Bin _, _ | Uno _, _ | Let _, _ | Swt _, _ | Rec _, _
     | If _, _ -> false
   in

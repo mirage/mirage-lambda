@@ -500,7 +500,7 @@ let typ e =
     | Var x ->
       let Var.V (x', g', t') = Var.typ x g in
       Expr (Var x', g', t')
-    | Abs (t, _, e) ->
+    | Lam (t, _, e) ->
       let Type.V t' = Type.typ t in
       (match aux e (t :: g) with
        | Expr (e', Env.(t'' :: g'), tr) ->
@@ -545,9 +545,9 @@ let typ e =
          Log.err (fun l -> l "Bin");
          error e g [ TypMismatch { a = Type.V Int; b = Type.V ta }
                    ; TypMismatch { a = Type.V Int; b = Type.V tb } ])
-    | Let (t, a, b) ->
+    | Let (t, _, a, b) ->
       let Env.V g' = Env.typ g in
-      (match Type.typ t, aux a g, aux b g with
+      (match Type.typ t, aux a g, aux b (t :: g) with
        | Type.V t', Expr (a', g'', t''), Expr (f', g''', r') ->
          (match Type.eq t' t'' , Env.eq g' g'', Env.eq (t'' :: g'') g''' with
           | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->

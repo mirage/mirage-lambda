@@ -41,6 +41,11 @@ let pexpr = Alcotest.testable Parsetree.pp Parsetree.equal
 let error = Alcotest.testable pp_error (=)
 let ok x = Alcotest.result x error
 
+let parse_exn e =
+  match Lambda.parse e with
+  | Ok y           -> y
+  | Error (`Msg e) -> Alcotest.failf "parsing y: %s" e
+
 let test_if () =
   let x = Parsetree.(if_ true_ (int 42) (int 21)) in
   Alcotest.(check @@ ok int) "if" (Ok 42) (type_and_eval x Type.int);
@@ -64,24 +69,18 @@ let test_lambda () =
     let open Parsetree in
     apply (
       apply (
-        lambda Type.int "x" (
-          lambda Type.int "y" (var 1))
+        lambda [ ("x", Type.int); ("y", Type.int) ] (var 1)
       ) (int 42)
     ) (int 21)
   in
-  Alcotest.(check @@ ok int) "lambda" (type_and_eval x Type.int) (Ok 42)
-
-(*
-let fix_example: (unit * int, _) expr =
-  let open Expr in
-  fix ~init:(var Var.o)
-    (if_ (int 123 = var Var.o)
-       (left (var Var.o + var Var.o))
-       (right (var Var.o)))
-*)
+  Alcotest.(check @@ ok int) "lambda" (type_and_eval x Type.int) (Ok 42);
+  let y = parse_exn {|
+      int f (x: int, y: int) { x + y };
+      f 42 21
+  |} in
+  Alcotest.(check @@ ok int) "lambda" (type_and_eval y Type.int) (Ok 63)
 
 let test_fact () =
-
   let code =
     let init x = ((fun _ -> 1), x) in
     let rec fact v =
@@ -115,18 +114,18 @@ let test_fact () =
     let open Parsetree in
     let main =
       let typ = Type.((int @-> int) ** int) in
-      fix ~typ ~init:(pair (lambda Type.int "x" (int 1)) (var 0))
+      fix ~typ ~init:(pair (lambda ["x", Type.int] (int 1)) (var 0))
         (if_
            (snd (var 0) = int 0)
            (right typ (pair (fst (var 0)) (int 0)))
            (left typ
               (pair
-                 (lambda Type.int "y"
+                 (lambda ["y", Type.int]
                     ((apply (fst (var 1)) (var 0)) * (snd (var 1))))
                  (snd (var 0) - int 1))))
     in
-    lambda Type.int "x"
-      (apply (fst (apply (lambda Type.int "y" main) (var 0))) (int 0))
+    lambda ["x",  Type.int]
+      (apply (fst (apply (lambda ["y", Type.int] main) (var 0))) (int 0))
   in
   Alcotest.(check @@ ok int) "unsafe" (Ok 120)
     (type_and_eval unsafe Type.(int @-> int) $ 5)
@@ -146,14 +145,14 @@ let test_prim () =
 
   let env_and_prim =
     let open Parsetree in
-    (lambda Type.string "x" (apply (apply padd (int 21)) (int 21)))
+    (lambda ["x", Type.string] (apply (apply padd (int 21)) (int 21)))
   in
 
   Alcotest.(check @@ ok int) "env_and_prim safe" (Ok 42)
     (type_and_eval env_and_prim Type.(string @-> int) $ "Hello World!");
   Alcotest.(check @@ ok int) "env_and_prim unsafe" (Ok 42)
     (type_and_eval
-       Parsetree.(lambda Type.int "x" env_and_prim)
+       Parsetree.(lambda ["x", Type.int] env_and_prim)
        Type.(int @-> string @-> int)
      $ 0 $ "Hello World!")
 
@@ -176,13 +175,12 @@ let test_parse_expr () =
   check "1 + 1 * 3" int 4;
   check "1 + 1 = 2" bool true;
   check "(1 = 2)" bool false;
-  check "(fun (x:int) -> x + 1) 1" int 2;
-  check "(fun (x:int) -> fun (x:bool) -> x) 1 false" bool false;
+  check "(fun (x:int) { x + 1}) 1" int 2;
+  check "(fun (x:int, y:bool) { y }) 1 false" bool false;
   check {|
-    (fun (f:int -> int) -> (fun (k:int) -> f$1 k$0))
-      (fun (x:int) -> x$0 + 1)
-      2
-  |} int 3
+    (fun (f: int -> int, k:int) { f$1 k$0 })
+      (fun (x:int) { x$0 + 1})
+      2 |} int 3
 
 let test_ping () =
   let app t f x =
@@ -193,7 +191,7 @@ let test_ping () =
     | Error e -> Fmt.failwith "%a" pp_error e
   in
   Alcotest.(check string) "ping" "20"
-    (app Type.int "(fun (x:int) -> x * 2)" "10")
+    (app Type.int "(fun (x:int) {x * 2})" "10")
 
 let test_primitives () =
   let primitives = [

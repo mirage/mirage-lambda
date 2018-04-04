@@ -308,9 +308,9 @@ module Expr = struct
       (match eval s e with
        | L l -> eval a (e, l)
        | R r -> eval b (e, r))
-    | Rec (t, _, f) ->
+    | Rec (_, _, f) ->
       let rec loop a = match eval f (e, a) with
-        | L a -> Fmt.epr "LOOP %a\n" (Type.pp_val t) a; loop a
+        | L a -> loop a
         | R r -> r
       in
       eval (Var Var.o) (e, loop)

@@ -269,11 +269,12 @@ module Expr = struct
     | Uno : ('a, 'res) unop * ('e, 'a) t -> ('e, 'res) t
     | Bin : ('a, 'b, 'res) binop * ('e, 'a) t * ('e, 'b) t -> ('e, 'res) t
     | Var : ('e, 'a) Var.t -> ('e, 'a) t
-    | Abs : 'a Type.t * ('e * 'a, 'b) t -> ('e, 'a -> 'b) t
+    | Lam : 'a Type.t * ('e * 'a, 'b) t -> ('e, 'a -> 'b) t
+    | Rec : 'p Type.t * 'r Type.t *
+            ('e * 'p, ('p, 'r) Type.either) t ->
+            ('e, 'p -> 'r) t
     | App : ('e, 'a -> 'b) t * ('e, 'a) t -> ('e, 'b) t
     | Let : 'a Type.t * ('e, 'a) t * ('e * 'a, 'b) t -> ('e, 'b) t
-    | Rec : { z : ('e, 'a) t
-            ; s : ('e * 'a, ('a, 'r) Type.either) t } -> ('e, 'r) t
     | Swt : { s : ('e, ('l, 'r) Type.either) t
             ; a : ('e * 'l, 'a) t
             ; b : ('e * 'r, 'a) t } -> ('e, 'a) t
@@ -293,7 +294,7 @@ module Expr = struct
     | Uno (Fst, x) -> fst (eval x e)
     | Uno (Snd, x) -> snd (eval x e)
     | Var x -> get x e
-    | Abs (_, r) -> (fun v -> eval r (e, v))
+    | Lam (_, r) -> (fun v -> eval r (e, v))
     | App (f, a) -> (eval f e) (eval a e)
     | Bin (Add, l, r) -> (eval l e) + (eval r e)
     | Bin (Sub, l, r) -> (eval l e) - (eval r e)
@@ -307,13 +308,12 @@ module Expr = struct
       (match eval s e with
        | L l -> eval a (e, l)
        | R r -> eval b (e, r))
-    | Rec { z; s; } ->
-      let z' = eval z e in
-      let rec loop a = match eval s (e, a) with
-        | L a -> loop a
+    | Rec (t, _, f) ->
+      let rec loop a = match eval f (e, a) with
+        | L a -> Fmt.epr "LOOP %a\n" (Type.pp_val t) a; loop a
         | R r -> r
       in
-      loop z'
+      eval (Var Var.o) (e, loop)
     | If (t, a, b) ->
       (match eval t e with
        | true -> eval a e
@@ -326,10 +326,10 @@ module Expr = struct
   let bool (x:bool) = Con x
   let string (x:string) = Con x
 
-  let lambda t e = Abs (t, e)
+  let lambda t e = Lam (t, e)
   let apply f a = App (f, a)
 
-  let fix ~init:z s = Rec { z; s; }
+  let fix t r s = Rec (t, r, s)
   let var x = Var x
   let if_ b t e = If (b, t, e)
 
@@ -394,7 +394,7 @@ let uncurry args =
         let Type.V t' = Type.typ t in
         (match Type.eq ta t' with
          | Some Eq.Refl ->
-           Expr (Abs (t', a), e, Arrow (t', tr))
+           Expr (Lam (t', a), e, Arrow (t', tr))
          | None ->
            Fmt.invalid_arg "Type mismatch: %a <> %a." Type.pp ta Type.pp t')
       | Expr _ -> invalid_arg "Impossible to uncurry, environment mismatch")
@@ -505,7 +505,7 @@ let typ e =
       (match aux e (t :: g) with
        | Expr (e', Env.(t'' :: g'), tr) ->
          (match Type.eq t' t'' with
-          | Some Eq.Refl -> Expr (Abs (t', e'), g', Type.Arrow (t', tr))
+          | Some Eq.Refl -> Expr (Lam (t', e'), g', Type.Arrow (t', tr))
           | None ->
             Log.err (fun l -> l "Abs");
             error e g [ TypMismatch { a = Type.V t'; b = Type.V t'' } ])
@@ -547,8 +547,9 @@ let typ e =
                    ; TypMismatch { a = Type.V Int; b = Type.V tb } ])
     | Let (t, _, a, b) ->
       let Env.V g' = Env.typ g in
-      (match Type.typ t, aux a g, aux b (t :: g) with
-       | Type.V t', Expr (a', g'', t''), Expr (f', g''', r') ->
+      let Type.V t' = Type.typ t in
+      (match aux a g, aux b (t :: g) with
+       | Expr (a', g'', t''), Expr (f', g''', r') ->
          (match Type.eq t' t'' , Env.eq g' g'', Env.eq (t'' :: g'') g''' with
           | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
             Expr (Let (t', a', f'), g', r')
@@ -609,39 +610,38 @@ let typ e =
        | wexpr ->
          Log.err (fun l -> l "Swt");
          error e g [ ExpectedEither wexpr ])
-    | Rec (u, z, s) ->
-      let Env.V g' = Env.typ g in
-      let Type.V u' = Type.typ u in
-      let gz = g in
-      let gs = (u :: g) in
-      let Env.V gz' = Env.typ gz in
-      let Env.V gs' = Env.typ gs in
-      let Expr (z', gz'', tz') = aux z gz in
-      let Expr (s', gs'', ts') = aux s gs in
-      (match Env.eq g' gz',
-             Env.eq (tz' :: g') gs' with
-      | Some (Eq.Refl as f1), Some (Eq.Refl as e1)->
-        (match Type.eq tz' u',
-               Type.eq ts' (Either (tz', tz')),
-               Env.eq gz' gz'',
-               Env.eq gs' gs'' with
-        | Some Eq.Refl,
-          Some Eq.Refl,
-          Some (Eq.Refl as f2),
-          Some (Eq.Refl as e2) ->
-          (match Eq.trans f1 f2, Eq.trans e1 e2 with
-           | Eq.Refl, Eq.Refl -> Expr (Rec { z = z'; s = s'; }, g', u'))
-        | _, _, _, _ ->
+    | Rec {r=rtyp; p=(_, ptyp); e }  ->
+      let Env.V g0 = Env.typ g in
+      let Type.V r = Type.typ rtyp in
+      let Type.V p = Type.typ ptyp in
+      let te = Type.Either (p, r) in
+      let tb = Type.Arrow (p, r) in
+      (match aux e (ptyp :: g) with
+       | Expr (e', Env.(te' :: g'), tr) ->
+         (match Type.eq tr te, Type.eq te' p, Env.eq g0 g' with
+          | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
+           Expr (Rec (p, r, e'), g0, tb)
+         | _ -> assert false)
+       | _ -> assert false)
+         (*
+      (match t' with
+       | Type.Either (b ,c) ->
+         (match Type.eq u b  with
+         | Some Eq.Refl ->
+           Expr (Rec { z = var Var.o; s = assert false; }, g', u)
+         | _ -> assert false)
+        | _ -> assert false *)
+           (*
+         | (Type.Arrow (u, Either (u, u))) with
+       | Some Eq.Refl -> Expr (Rec { z = var Var.o; s = s'; }, gs'', u')
+       | _ -> assert false
           Log.err (fun l -> l "Rec");
           error e g [ TypMismatch { a = Type.V tz'; b = Type.V u' }
                     ; TypMismatch { a = Type.V ts';
                                     b = Type.V (Either (tz', tz')) }
                     ; EnvMismatch { g = Env.V gz'; g' = Env.V gz'' }
                     ; EnvMismatch { g = Env.V gs'; g' = Env.V gs'' } ])
-      | _, _ ->
-        Log.err (fun l -> l "Rec");
-        error e g [ EnvMismatch { g = Env.V g'; g' = Env.V gz' }
-                  ; EnvMismatch { g = Env.V (tz' :: g'); g' = Env.V gs' } ])
+            | Rec _ -> assert false *)
   in
   match aux e [] with
   | Expr (m, Env.[], t) -> Ok (E (m ,t))

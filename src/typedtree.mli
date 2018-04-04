@@ -87,7 +87,10 @@ module Expr: sig
   val ( * ): ('a, int) t -> ('a, int) t -> ('a, int) t
 
   val if_: ('a, bool) t -> ('a, 'b) t -> ('a, 'b) t -> ('a, 'b) t
-  val fix: init:('a, 'b) t -> ('a * 'b, ('b, 'c) Type.either) t -> ('a, 'c) t
+
+  val fix: 'a Type.t -> 'b Type.t -> ('c * 'a, ('a, 'b) Type.either) t ->
+    ('c, 'a -> 'b) t
+
   val lambda: 'a Type.t -> ('b * 'a, 'c) t -> ('b, 'a -> 'c) t
   val apply: ('a, 'b -> 'c) t -> ('a, 'b) t -> ('a, 'c) t
   val eval: ('e, 'a) t -> 'e -> 'a

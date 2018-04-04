@@ -41,10 +41,15 @@ let pexpr = Alcotest.testable Parsetree.pp Parsetree.equal
 let error = Alcotest.testable pp_error (=)
 let ok x = Alcotest.result x error
 
-let parse_exn e =
-  match Lambda.parse e with
+let parse_exn ?primitives e =
+  match Lambda.parse ?primitives e with
   | Ok y           -> y
-  | Error (`Msg e) -> Alcotest.failf "parsing y: %s" e
+  | Error (`Msg e) -> Alcotest.failf "parsing: %s" e
+
+let typ_exn e =
+  match Lambda.typ e with
+  | Ok y    -> y
+  | Error e -> Alcotest.failf "typing: %a" Lambda.pp_error e
 
 let test_if () =
   let x = Parsetree.(if_ true_ (int 42) (int 21)) in
@@ -75,7 +80,7 @@ let test_lambda () =
   in
   Alcotest.(check @@ ok int) "lambda" (type_and_eval x Type.int) (Ok 42);
   let y = parse_exn {|
-      int f (x: int, y: int) { x + y };
+      let f (x: int, y: int): int = x + y in
       f 42 21
   |} in
   Alcotest.(check @@ ok int) "lambda" (type_and_eval y Type.int) (Ok 63)
@@ -94,41 +99,59 @@ let test_fact () =
 
   let safe =
     let open Expr in
+    let init = pair (lambda Type.int (int 1)) (var Var.o) in
     let main =
-      fix ~init:(pair (lambda Type.int (int 1)) (var Var.o))
+      fix
+        Type.( (int @-> int) ** int )
+        Type.int
         (if_
            (snd (var Var.o) = int 0)
-           (right (pair (fst (var Var.o)) (int 0)))
+           (right (apply (fst (var Var.o)) (int 0)))
            (left  (pair
                      (lambda Type.int
                         (apply (fst (var Var.(o$x))) (var Var.o)
                          * snd (var Var.(o$x))))
                      (snd (var Var.o) - int 1))))
     in
-    lambda Type.int
-      (apply (fst (apply (lambda Type.int main) (var Var.o))) (int 0))
+    lambda Type.int (apply main init)
   in
   Alcotest.(check @@ int) "safe" 120 (Expr.eval safe () 5);
 
   let unsafe =
     let open Parsetree in
+    let init = pair (lambda ["_", Type.int] (int 1)) (var 0) in
+    let ptyp = Type.((int @-> int) ** int) in
     let main =
-      let typ = Type.((int @-> int) ** int) in
-      fix ~typ ~init:(pair (lambda ["x", Type.int] (int 1)) (var 0))
+      fix
+        ("v", ptyp) Type.int
         (if_
            (snd (var 0) = int 0)
-           (right typ (pair (fst (var 0)) (int 0)))
-           (left typ
+           (right ptyp (apply (fst (var 0)) (int 0)))
+           (left Type.int
               (pair
                  (lambda ["y", Type.int]
                     ((apply (fst (var 1)) (var 0)) * (snd (var 1))))
                  (snd (var 0) - int 1))))
     in
-    lambda ["x",  Type.int]
-      (apply (fst (apply (lambda ["y", Type.int] main) (var 0))) (int 0))
+    lambda ["x",  Type.int] (apply main init)
   in
   Alcotest.(check @@ ok int) "unsafe" (Ok 120)
-    (type_and_eval unsafe Type.(int @-> int) $ 5)
+    (type_and_eval unsafe Type.(int @-> int) $ 5);
+
+  let str = parse_exn {|
+    rec fact (v: int * int): int =
+      let acc: int = fst v in
+      let n  : int = snd v in
+      if (n = 1) {
+         R (int * int) acc
+      } else {
+         L (acc * n, n - 1) int
+      }
+    in
+    fun (x: int) -> fact (1, x)
+  |} in
+  Alcotest.(check @@ ok int) "parse" (Ok 120)
+    (type_and_eval str Type.(int @-> int) $ 5)
 
 let test_prim () =
   let _, padd = primitive "%add" [Type.int; Type.int] Type.int (+) in
@@ -175,11 +198,11 @@ let test_parse_expr () =
   check "1 + 1 * 3" int 4;
   check "1 + 1 = 2" bool true;
   check "(1 = 2)" bool false;
-  check "(fun (x:int) { x + 1}) 1" int 2;
-  check "(fun (x:int, y:bool) { y }) 1 false" bool false;
+  check "(fun (x:int) -> x + 1) 1" int 2;
+  check "(fun (x:int, y:bool) -> y) 1 false" bool false;
   check {|
-    (fun (f: int -> int, k:int) { f$1 k$0 })
-      (fun (x:int) { x$0 + 1})
+    (fun (f: int -> int, k:int) -> f k)
+      (fun (x:int) -> x + 1)
       2 |} int 3
 
 let test_ping () =
@@ -191,7 +214,7 @@ let test_ping () =
     | Error e -> Fmt.failwith "%a" pp_error e
   in
   Alcotest.(check string) "ping" "20"
-    (app Type.int "(fun (x:int) {x * 2})" "10")
+    (app Type.int "(fun (x:int) -> x * 2)" "10")
 
 let test_primitives () =
   let primitives = [

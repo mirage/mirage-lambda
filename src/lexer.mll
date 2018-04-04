@@ -59,8 +59,8 @@ let syntax_error s = raise (Error s)
 }
 
 let digit = ['0'-'9']
-let alpha = ['a'-'z' 'A'-'Z']
-let var = alpha (alpha | digit | '-' | '_' | '.')*
+let alpha = ['a'-'z' 'A'-'Z' '_']
+let var = alpha (alpha | digit | '-' | '.' | '\'')*
 let newline = '\r' | '\n' | "\r\n"
 let white = [' ' '\t']+
 
@@ -69,6 +69,7 @@ rule program t = parse
   | newline  { Lexing.new_line lexbuf; program t lexbuf }
   | '"'      { string t lexbuf }
   | digit+ as s { p t "INT %s" s; INT (int_of_string s)}
+  | "->"     { p t "ARROW"; ARROW }
   | "+"      { p t "PLUS"; PLUS }
   | "-"      { p t "MINUS"; MINUS }
   | "*"      { p t "TIMES"; TIMES }
@@ -82,8 +83,17 @@ rule program t = parse
   | "{"      { p t "LCUR"; LCUR }
   | "}"      { p t "RCUR"; RCUR }
   | "|"      { p t "BAR"; BAR }
-  | "->"     { p t "ARROW"; ARROW }
+  | "if"     { p t "IF"; IF }
+  | "else"   { p t "ELSE"; ELSE }
+  | "R"      { p t "R"; R }
+  | "L"      { p t "L"; L }
+  | "unit"   { p t "unit"; UNIT }
+  | "fst"    { p t "FST"; FST }
+  | "snd"    { p t "SND"; SND }
+  | "let"    { p t "LET"; LET }
+  | "in"     { p t "IN"; IN }
   | "fun"    { p t "FUN"; FUN }
+  | "rec"    { p t "REC"; REC }
   | "true"   { p t "TRUE"; BOOL true }
   | "false"  { p t "FALSE"; BOOL false }
   | "int"    { p t "int"; S_INT }

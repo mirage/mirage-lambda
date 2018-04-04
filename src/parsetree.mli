@@ -62,6 +62,7 @@ type expr = private
   | Prm of primitive
   | Var of var
   | Lam of typ * string * expr
+  | Rec of { r: typ; p: string * typ; e: expr }
   | App of expr * expr
   | Bin of binop * expr * expr
   | Uno of unop * expr
@@ -69,7 +70,6 @@ type expr = private
   | Swt of { a : expr
            ; b : expr
            ; s : expr }
-  | Rec of typ * expr * expr
   | If  of expr * expr * expr
 
 and primitive =
@@ -104,11 +104,12 @@ val right: typ -> expr -> expr
 
 val let_var: typ -> string -> expr -> expr -> expr
 val let_fun: typ -> string -> (string * typ) list -> expr -> expr -> expr
+val let_rec: typ -> string -> string * typ -> expr -> expr -> expr
 
 val if_: expr -> expr -> expr -> expr
 val match_: expr -> expr -> expr -> expr
 val apply: expr -> expr -> expr
-val fix: typ:typ -> init:expr -> expr -> expr
+val fix: (string * typ) -> typ -> expr -> expr
 
 val var: int -> expr
 val primitive: string -> typ list -> typ -> (value list -> value) -> expr

@@ -41,6 +41,11 @@
 
   let add_ctx a ctx = List.rev_map fst a @ ctx
 
+  let add_prim (_, l) r prims =
+    let return = Primitive.return l r in
+    let continue = Primitive.continue l r in
+    return :: continue :: prims
+
   open Parsetree
 %}
 
@@ -124,7 +129,7 @@ expr:
     }
   | REC n=VAR LPAR a=arg RPAR COLON t=typ EQ e=expr IN b=expr
     { fun prims ctx ->
-        let e = e prims (add_ctx [a] ctx) in
+        let e = e (add_prim a t prims) (add_ctx [a] ctx) in
         let b = b prims (n :: ctx) in
         let_rec t n a e b
     }

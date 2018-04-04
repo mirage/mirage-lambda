@@ -143,9 +143,9 @@ let test_fact () =
       let acc: int = fst v in
       let n  : int = snd v in
       if (n = 1) {
-         R (int * int) acc
+         return acc
       } else {
-         L (acc * n, n - 1) int
+         continue (acc * n, n - 1)
       }
     in
     fun (x: int) -> fact (1, x)

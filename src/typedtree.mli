@@ -19,7 +19,7 @@ module Type: sig
   type lwt = Higher.Lwt.t
   type ('a, 'b) app = ('a, 'b) Higher.app
   type 'a t = 'a T.t
-  type ('a, 'b) either
+  type ('a, 'b) either = ('a, 'b) T.either
 
   val eq: 'a t -> 'b t -> ('a, 'b) Eq.refl option
   val untype: 'a t -> Parsetree.typ
@@ -31,7 +31,7 @@ module Type: sig
   val abstract: string -> 'a t
   val apply: 'a t -> 'b t -> ('a, 'b) app t
   val lwt: 'a t -> ('a, lwt) app t
-
+  val either: 'a t -> 'b t -> ('a, 'b) either t
   val ( @->): 'a t -> 'b t -> ('a -> 'b) t
   val ( ** ): 'a t -> 'b t -> ('a * 'b) t
   val ( || ): 'a t -> 'b t -> ('a, 'b) either t
@@ -48,6 +48,9 @@ module Type: sig
   end
 
   val pp_val: 'a t -> 'a Fmt.t
+
+  type v = V : 'a t -> v
+  val typ: Parsetree.typ -> v
 end
 
 module Value: sig

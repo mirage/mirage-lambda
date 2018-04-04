@@ -620,28 +620,18 @@ let typ e =
        | Expr (e', Env.(te' :: g'), tr) ->
          (match Type.eq tr te, Type.eq te' p, Env.eq g0 g' with
           | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
-           Expr (Rec (p, r, e'), g0, tb)
-         | _ -> assert false)
-       | _ -> assert false)
-         (*
-      (match t' with
-       | Type.Either (b ,c) ->
-         (match Type.eq u b  with
-         | Some Eq.Refl ->
-           Expr (Rec { z = var Var.o; s = assert false; }, g', u)
-         | _ -> assert false)
-        | _ -> assert false *)
-           (*
-         | (Type.Arrow (u, Either (u, u))) with
-       | Some Eq.Refl -> Expr (Rec { z = var Var.o; s = s'; }, gs'', u')
-       | _ -> assert false
-          Log.err (fun l -> l "Rec");
-          error e g [ TypMismatch { a = Type.V tz'; b = Type.V u' }
-                    ; TypMismatch { a = Type.V ts';
-                                    b = Type.V (Either (tz', tz')) }
-                    ; EnvMismatch { g = Env.V gz'; g' = Env.V gz'' }
-                    ; EnvMismatch { g = Env.V gs'; g' = Env.V gs'' } ])
-            | Rec _ -> assert false *)
+            Expr (Rec (p, r, e'), g0, tb)
+          | Some Eq.Refl, None, _ ->
+            error e g [ TypMismatch { a = Type.V te'; b = Type.V p }]
+          | None, Some Eq.Refl, _ ->
+            error e g [ TypMismatch { a = Type.V tr; b = Type.V te }]
+          | Some Eq.Refl, Some Eq.Refl, None ->
+            error e g [ EnvMismatch { g = Env.V g0; g' = Env.V g0 } ]
+          | None, None, _ ->
+            error e g [ TypMismatch { a = Type.V te'; b = Type.V p };
+                        TypMismatch { a = Type.V tr; b = Type.V te }])
+       | Expr (_, g', _) ->
+         error e g [ EnvMismatch { g = Env.(V (p :: g0)); g' = Env.V g' }])
   in
   match aux e [] with
   | Expr (m, Env.[], t) -> Ok (E (m ,t))

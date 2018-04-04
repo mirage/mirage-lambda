@@ -80,94 +80,9 @@ let type_and_eval:
     | Some Eq.Refl -> Ok v
     | None   -> Typedtree.err_type_mismatch m t t'
 
-module Args = struct
-
-  type ('a, 'res) t =
-    | []   : ('res, 'res) t
-    | (::) : 'a typ * ('k, 'res) t -> ('a -> 'k, 'res) t
-
-end
-
-module Primitive = struct
-
-  type ('f, 'a) t = {
-    name  : string;
-    args  : ('f, 'a) Args.t;
-    output: 'a typ;
-    body  : 'f;
-  }
-
-  let v name args output body = { name; args; output; body }
-
-  let untype_args args =
-    let open Args in
-    let rec aux:
-      type a b. Parsetree.typ list -> (a, b) Args.t -> Parsetree.typ list
-      = fun acc -> function
-        | []   -> List.rev acc
-        | h::t -> aux (Type.untype h :: acc) t
-    in
-    aux args
-
-  let rec apply:
-    type a b. (a, b) Args.t -> a -> Parsetree.value list -> b * (b, b) Args.t
-    = fun args f params ->
-      let open Args in
-      match args, params with
-      | []  , []   -> f, []
-      | a::b, h::t -> apply b (f @@ Typedtree.Value.cast h a) t
-      | _          -> failwith "invalid arity"
-
-  let untype v =
-    let inputs = untype_args [] v.args in
-    Parsetree.primitive v.name inputs (Type.untype v.output) (fun l ->
-        let r, _ = apply v.args v.body l in
-        Typedtree.Value.untype v.output r
-      )
-end
-
-module Primitive_lwt = struct
-
-  (* XXX(samoht): there's probably a better way then to duplicate the
-     module, but I didn't find it. *)
-
-  type ('f, 'a) t = {
-    name  : string;
-    args  : ('f, 'a Lwt.t) Args.t;
-    output: ('a, Type.lwt) Type.app typ;
-    body  : 'f;
-  }
-
-  let v name args output body = { name; args; output; body }
-
-  let untype_args args =
-    let open Args in
-    let rec aux:
-      type a b. Parsetree.typ list -> (a, b) Args.t -> Parsetree.typ list
-      = fun acc -> function
-        | []   -> List.rev acc
-        | h::t -> aux (Type.untype h :: acc) t
-    in
-    aux args
-
-  let rec apply:
-    type a b. (a, b) Args.t -> a -> Parsetree.value list -> b * (b, b) Args.t
-    = fun args f params ->
-      let open Args in
-      match args, params with
-      | []  , []   -> f, []
-      | a::b, h::t -> apply b (f @@ Typedtree.Value.cast h a) t
-      | _          -> failwith "invalid arity"
-
-  let untype v =
-    let inputs = untype_args [] v.args in
-    Parsetree.primitive v.name inputs (Type.untype v.output) (fun l ->
-        let r, _ = apply v.args v.body l in
-        Typedtree.Value.untype v.output (Higher.Lwt.inj r)
-      )
-end
-
 type primitive = string * Parsetree.expr
+
+module Args = Primitive.Args
 
 let primitive name args out f =
   name, Primitive.(v name args out f |> untype)
@@ -175,7 +90,7 @@ let primitive name args out f =
 module L = struct
 
   let primitive name args out f =
-    name, Primitive_lwt.(v name args out f |> untype)
+    name, Primitive.L.(v name args out f |> untype)
 
   let cast
     : type a. value -> (a, Type.lwt) Type.app typ -> a Lwt.t option

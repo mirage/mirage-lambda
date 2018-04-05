@@ -19,33 +19,35 @@ module Type: sig
   type lwt = Higher.Lwt.t
   type ('a, 'b) app = ('a, 'b) Higher.app
   type 'a t = 'a T.t
-  type ('a, 'b) either = ('a, 'b) T.either
+
+  type ('a, 'b) either = ('a, 'b) T.either =
+      | L of 'a
+      | R of 'b
 
   val eq: 'a t -> 'b t -> ('a, 'b) Eq.refl option
   val untype: 'a t -> Parsetree.typ
 
   val unit: unit t
   val int: int t
+  val int32: int32 t
+  val int64: int64 t
   val bool: bool t
   val string: string t
+
+  val list: 'a t -> 'a list t
+  val option: 'a t -> 'a option t
+  val array: 'a t -> 'a array t
   val abstract: string -> 'a t
-  val apply: 'a t -> 'b t -> ('a, 'b) app t
+
   val lwt: 'a t -> ('a, lwt) app t
+  val apply: 'a t -> 'b t -> ('a, 'b) app t
+
   val either: 'a t -> 'b t -> ('a, 'b) either t
+  val result: 'a t -> 'b t -> ('a, 'b) result t
+
   val ( @->): 'a t -> 'b t -> ('a -> 'b) t
   val ( ** ): 'a t -> 'b t -> ('a * 'b) t
   val ( || ): 'a t -> 'b t -> ('a, 'b) either t
-
-  module type S1 = sig type 'a t end
-  module type S2 = sig type ('a, 'b) t end
-
-  module Abstract1 (S: S1): sig
-    val v: string -> 'a t -> 'a S.t t
-  end
-
-  module Abstract2 (S: S2): sig
-    val v: string -> 'a t -> 'b t -> ('a, 'b) S.t t
-  end
 
   val pp_val: 'a t -> 'a Fmt.t
 

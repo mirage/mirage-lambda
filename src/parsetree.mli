@@ -24,22 +24,36 @@ module Type: sig
   type t = private
     | Unit
     | Int
+    | Int32
+    | Int64
     | Bool
     | String
     | Lwt
+    | List of t
+    | Array of t
+    | Option of t
     | Apply of t * t
-    | Abstract of t list * abstract
     | Arrow of t * t
     | Pair of t * t
     | Either of t * t
+    | Result of t * t
+    | Abstract of abstract
 
   val unit: t
   val int: t
+  val int32: t
+  val int64: t
   val bool: t
   val string: t
   val lwt: t
 
-  val abstract: 'a Eq.witness -> t list -> t
+  val list: t -> t
+  val array: t -> t
+  val option: t -> t
+  val either: t -> t -> t
+  val result: t -> t -> t
+
+  val abstract: 'a Eq.witness -> t
   val apply: t -> t -> t
 
   val ( ** ): t -> t -> t
@@ -60,6 +74,9 @@ type arithmetic = [ `Add | `Sub | `Mul | `Div ]
 type expr = private
   | Val of value
   | Prm of primitive
+  | Lst of typ option * expr list
+  | Arr of typ option * expr array
+  | Opt of typ option * expr option
   | Var of var
   | Lam of typ * string * expr
   | Rec of { r: typ; p: string * typ; e: expr }
@@ -78,7 +95,7 @@ and primitive =
   ; exp  : value list -> value }
 
 and binop =  [ arithmetic | `Pair | `Eq ]
-and unop =  Fst | Snd | L of typ | R of typ
+and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
 
 val pp: expr Fmt.t
 val pp_value: value Fmt.t
@@ -86,10 +103,22 @@ val pp_value: value Fmt.t
 val dump_var: var Fmt.t
 
 val unit: expr
+
 val int: int -> expr
+val int32: int32 -> expr
+val int64: int64 -> expr
+val list: ?typ:typ -> expr list -> expr
+val array: ?typ:typ -> expr array -> expr
+val none: typ -> expr
+val some: expr -> expr
+val ok: typ -> expr -> expr
+val error: typ -> expr -> expr
+
 val string: string -> expr
+
 val true_: expr
 val false_: expr
+
 val value: 'a -> 'a T.t -> 'a Fmt.t -> expr
 
 val lambda: (string * typ) list -> expr -> expr

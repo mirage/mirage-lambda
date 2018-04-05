@@ -4,4 +4,4 @@ all:
 	jbuilder build --dev
 
 test:
-	jbuilder runtest
+	jbuilder runtest --dev

@@ -19,11 +19,11 @@
 
   exception Internal of string
 
-  let error fmt = Fmt.kstrf (fun s -> raise (Internal s)) fmt
+  let err fmt = Fmt.kstrf (fun s -> raise (Internal s)) fmt
 
   let err_unbound v prims ctx =
-    error "The variable %s is not bound in %a"
-          v Fmt.(Dump.list string) (List.map fst prims @ ctx)
+    err "The variable %s is not bound in %a"
+        v Fmt.(Dump.list string) (List.map fst prims @ ctx)
 
   let index v l =
     let rec aux i = function
@@ -49,36 +49,42 @@
   open Parsetree
 %}
 
+%token UNIT
 %token <int> INT
+%token <int32> INT32
+%token <int64> INT64
 %token <string> VAR STRING
 %token <bool> BOOL
 
+%token NONE SOME OK ERROR
 %token PLUS MINUS
 %token TIMES
-%token EQ IN COLON SEMICOLON
+%token EQ IN COLON SEMI
 %token EOF
-%token LPAR RPAR LCUR RCUR
-%token FUN REC IF ELSE LET
+%token LPAR RPAR LSQU RSQU
+%token FUN REC IF ELSE LET THEN
 %token COMMA
 %token L R
 %token APP
 %token DOLLAR
 %token FST SND
 
-%token S_INT S_BOOL S_STRING
-%token UNIT
+%token S_INT S_INT32 S_INT64 S_BOOL S_STRING S_LIST S_ARRAY S_OPTION S_RESULT
 %token ARROW BAR
 
-%left IN
-%left ARROW
-%left COMMA
-%left SEMICOLON
+%right    ARROW
+%nonassoc below_SEMI
+%nonassoc SEMI
+%nonassoc LET
+%nonassoc ELSE
+%nonassoc COMMA
+%left     EQ
+%left     PLUS MINUS
+%left     TIMES
 
-%left EQ
-%left PLUS MINUS
-%left TIMES
-
-%nonassoc VAR INT STRING LPAR BOOL LET REC R L IF FUN FST SND
+%left     S_OPTION S_LIST S_ARRAY
+%nonassoc LSQU VAR INT INT32 INT64 STRING LPAR BOOL REC R L IF FUN FST SND
+          OK ERROR SOME
 %nonassoc APP
 
 %left BAR
@@ -90,44 +96,64 @@
 %%
 
 main:
-  | e=expr EOF { fun prims ->
-                 try Ok (e prims [])
-                 with Internal s -> Error s }
+  | e=expr_seq EOF { fun prims ->
+                     try Ok (e prims [])
+                     with Internal s -> Error s }
+
+expr_seq:
+  | e=expr %prec below_SEMI { e }
+  | e=expr SEMI             { e }
+  | e=expr SEMI b=expr_seq
+    { fun prims ctx ->
+        let v = "_" and t = Type.unit in
+        let e = e prims ctx in
+        let b = b prims ctx in
+        let_var t v e b }
 
 expr:
   | LPAR e=expr RPAR        { e }
   | i=INT                   { fun _ _ -> int i }
+  | i=INT32                 { fun _ _ -> int32 i }
+  | i=INT64                 { fun _ _ -> int64 i }
   | s=STRING                { fun _ _ -> string s }
   | b=BOOL                  { fun _ _ -> if b then true_ else false_ }
-  | a=expr COMMA b=expr     { fun p c -> pair (a p c) (b p c) }
   | R t=typ e=expr          { fun p c -> right t (e p c) }
   | L e=expr t=typ          { fun p c -> left t (e p c) }
+  | OK e=expr t=typ         { fun p c -> ok t (e p c) }
+  | ERROR t=typ e=expr      { fun p c -> error t (e p c) }
+  | SOME e=expr             { fun p c -> some (e p c) }
+  | LPAR NONE COLON t=typ S_OPTION RPAR
+    { fun _ _ -> none t }
   | FST e=expr              { fun p c -> fst (e p c) }
   | SND e=expr              { fun p c -> snd (e p c) }
-  | e=expr SEMICOLON b=expr
-    { fun prims ctx ->
-        let v = "_" and t = Type.unit in
-        let e = e prims ctx in
-        let b = b prims (v :: ctx) in
-        let_var t v e b }
-  | IF LPAR i=expr RPAR LCUR t=expr RCUR ELSE LCUR e=expr RCUR
+  | LPAR LSQU BAR BAR RSQU COLON t=typ S_ARRAY RPAR
+                            { fun _ _ -> array ~typ:t [||] }
+  | LSQU BAR l=list BAR RSQU
+    { fun p c ->
+      let l = List.map (fun e -> e p c) l in
+      array (Array.of_list l) }
+  | LPAR LSQU RSQU COLON t=typ S_LIST RPAR
+                            { fun _ _ -> list ~typ:t [] }
+  | LSQU l=list RSQU        { fun p c -> list (List.map (fun e -> e p c) l)}
+  | a=expr COMMA b=expr     { fun p c -> pair (a p c) (b p c) }
+  | IF i=expr THEN t=expr ELSE e=expr
     { fun prims ctx ->
         let i = i prims ctx in
         let t = t prims ctx in
         let e = e prims ctx in
         if_ i t e }
-  | LET v=VAR COLON t=typ EQ e=expr IN b=expr
+  | LET v=VAR COLON t=typ EQ e=expr IN b=expr_seq
     { fun prims ctx ->
         let e = e prims ctx in
         let b = b prims (v::ctx) in
         let_var t v e b }
-  | LET n=VAR LPAR a=args RPAR COLON t=typ EQ e=expr IN b=expr
+  | LET n=VAR LPAR a=args RPAR COLON t=typ EQ e=expr IN b=expr_seq
     { fun prims ctx ->
         let e = e prims (add_ctx a ctx) in
         let b = b prims (n :: ctx) in
         let_fun t n a e b
     }
-  | REC n=VAR LPAR a=arg RPAR COLON t=typ EQ e=expr IN b=expr
+  | REC n=VAR LPAR a=arg RPAR COLON t=typ EQ e=expr IN b=expr_seq
     { fun prims ctx ->
         let e = e (add_prim a t prims) (add_ctx [a] ctx) in
         let b = b prims (n :: ctx) in
@@ -146,7 +172,7 @@ expr:
       fun prims ctx ->
         let id = index v ctx in
         if Pervasives.(id = Some i) then resolve_name v prims ctx
-        else error "%s$%d should have id %a" v i Fmt.(option int) id }
+        else err "%s$%d should have id %a" v i Fmt.(option int) id }
   | a=expr f=binop b=expr   {
       fun prims ctx ->
       let a = a prims ctx in
@@ -167,12 +193,21 @@ expr:
 typ:
   | UNIT              { Type.unit }
   | S_INT             { Type.int }
+  | S_INT32           { Type.int32 }
+  | S_INT64           { Type.int64 }
   | S_BOOL            { Type.bool }
   | S_STRING          { Type.string }
+  | a=typ S_LIST      { Type.list a }
+  | a=typ S_ARRAY     { Type.array a }
+  | a=typ S_OPTION    { Type.option a }
   | a=typ ARROW b=typ { Type.(a @-> b) }
   | a=typ TIMES b=typ { Type.(a ** b) }
   | a=typ BAR b=typ   { Type.(a || b) }
   | LPAR a=typ RPAR   { a }
+  | LPAR a=typ COMMA b=typ RPAR S_RESULT { Type.result a b }
+
+list:
+  | x=separated_nonempty_list(SEMI, expr) { x }
 
 args:
   | x=separated_nonempty_list(COMMA, arg) {x}

@@ -26,48 +26,51 @@ type lwt = Higher.Lwt.t
 type _ t =
   | Unit    : unit t
   | Int     : int t
+  | Int32   : int32 t
+  | Int64   : int64 t
   | Bool    : bool t
   | String  : string t
   | Lwt     : lwt t
+  | List    : 'a t -> 'a list t
+  | Array   : 'a t -> 'a array t
+  | Option  : 'a t -> 'a option t
+  | Abstract: 'a Eq.witness -> 'a t
   | Apply   : 'a t * 'b t -> ('a, 'b) app t
-  | Abstract: 'b params * 'a Eq.witness-> 'a t
   | Arrow   : 'a t * 'b t -> ('a -> 'b) t
   | Pair    : 'a t * 'b t -> ('a * 'b) t
   | Either  : 'a t * 'b t -> ('a, 'b) either t
-
-and 'a params =
-  | Empty: unit params
-  | Cons: 'a t * 'b params -> ('a * 'b) params
+  | Result  : 'a t * 'b t -> ('a, 'b) result t
 
 let rec eq: type a b. a t -> b t -> (a, b) Eq.refl option = fun a b ->
   match a, b with
   | Unit  , Unit   -> Some Eq.Refl
   | Int   , Int    -> Some Eq.Refl
+  | Int32 , Int32  -> Some Eq.Refl
+  | Int64 , Int64  -> Some Eq.Refl
   | Bool  , Bool   -> Some Eq.Refl
   | String, String -> Some Eq.Refl
   | Lwt   , Lwt    -> Some Eq.Refl
+  | List a  , List b   ->
+    (match eq a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
+  | Array a , Array b  ->
+    (match eq a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
+  | Option a, Option b ->
+    (match eq a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
+  | Abstract a, Abstract b -> Eq.Witness.eq a.wit b.wit
   | Apply (a, a') , Apply (b, b')  ->
     (match eq a b, eq a' b' with
      | Some Eq.Refl, Some Eq.Refl -> Some Eq.Refl
      | _ -> None)
-  | Abstract (a, a'), Abstract (b, b') ->
-    (match eq_params a b with
-     | Some Eq.Refl -> Eq.Witness.eq a'.wit b'.wit
-     | None -> None)
   | Arrow (a, a') , Arrow (b, b')  -> Eq.(eq a b >>= fun Refl -> eq a' b')
   | Either (a, a'), Either (b, b') -> Eq.(eq a b >?= fun Refl -> eq a' b')
+  | Result (a, a'), Result (b, b') ->
+    (match eq a b, eq a' b' with
+     | Some Eq.Refl, Some Eq.Refl -> Some Eq.Refl
+     | _ -> None)
   | Pair  (a, a') , Pair  (b, b')  -> Eq.(eq a b >&= fun Refl -> eq a' b')
   | Int , _ -> None | Bool, _ -> None | String, _ -> None
   | Abstract _, _ -> None | Arrow _, _ -> None | Either _, _ -> None
   | Pair _, _ -> None | Unit, _ -> None | Lwt, _ -> None
-  | Apply _, _ -> None
-
-and eq_params:
-  type a b. a params -> b params -> (a, b) Eq.refl option = fun a b ->
-  match a, b with
-  | Empty      , Empty       -> Some Eq.Refl
-  | Cons (a, b), Cons (c, d) ->
-    (match eq a c, eq_params d b with
-     | Some Eq.Refl, Some Eq.Refl -> Some Eq.Refl
-     | _ -> None)
-  | Empty, _ -> None | Cons _, _ -> None
+  | Apply _, _ -> None | Int32, _ -> None | Int64, _ -> None
+  | List _, _ -> None | Array _, _ -> None | Option _, _ -> None
+  | Result _, _ -> None

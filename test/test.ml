@@ -46,7 +46,7 @@ let parse_exn ?primitives e =
   | Ok y           -> y
   | Error (`Msg e) -> Alcotest.failf "parsing: %s" e
 
-let typ_exn e =
+let _typ_exn e =
   match Lambda.typ e with
   | Ok y    -> y
   | Error e -> Alcotest.failf "typing: %a" Lambda.pp_error e
@@ -142,11 +142,10 @@ let test_fact () =
     rec fact (v: int * int): int =
       let acc: int = fst v in
       let n  : int = snd v in
-      if (n = 1) {
+      if n = 1 then
          return acc
-      } else {
+      else
          continue (acc * n, n - 1)
-      }
     in
     fun (x: int) -> fact (1, x)
   |} in
@@ -194,10 +193,38 @@ let test_parse_expr () =
   in
   let int = (Alcotest.int, Type.int) in
   let bool = (Alcotest.bool, Type.bool) in
+  let string = (Alcotest.string, Type.string) in
+  let list l = (Alcotest.list (fst l), Type.list (snd l)) in
+  let array l = (Alcotest.array (fst l), Type.array (snd l)) in
+  let option a = (Alcotest.option (fst a), Type.option (snd a)) in
+  let result a b =
+    (Alcotest.result (fst a) (fst b), Type.result (snd a) (snd b))
+  in
+  let either a b =
+    let pp ppf = function
+      | Type.L x -> Fmt.pf ppf "L %a" (Alcotest.pp (fst a)) x
+      |      R x -> Fmt.pf ppf "R %a" (Alcotest.pp (fst b)) x
+    in
+    let eq x y = match x, y with
+      | Type.L x, Type.L y -> Alcotest.equal (fst a) x y
+      |      R x,      R y -> Alcotest.equal (fst b) x y
+      | _ -> false
+    in
+    Alcotest.testable pp eq, Type.either (snd a) (snd b)
+  in
   check "1 + 1 + 1" int 3;
   check "1 + 1 * 3" int 4;
   check "1 + 1 = 2" bool true;
   check "(1 = 2)" bool false;
+  check "[1;2]" (list int) [1; 2];
+  check "([]: string list)" (list string) [];
+  check "[|1;2|]" (array int) [|1; 2|];
+  check "([||]: bool array)" (array bool) [||];
+  check "(None: int option)" (option int) None;
+  check "Ok 1 bool" (result int bool) (Ok 1);
+  check "Error int true" (result int bool) (Error true);
+  check "Some \"foo\"" (option string) (Some "foo");
+  check "L (None: int option) string" (either (option int) string) (L None);
   check "(fun (x:int) -> x + 1) 1" int 2;
   check "(fun (x:int, y:bool) -> y) 1 false" bool false;
   check {|
@@ -227,26 +254,24 @@ module Block: sig
   type t
   val pp: t Fmt.t
   type error
+  val pp_error: error Fmt.t
   val connect: string -> t
-  val read: t -> int (* -> string list *) -> (* (unit, error) result *) unit Lwt.t
+  val read: t -> int64 -> string list -> (unit, error) result Lwt.t
 end = struct
   type error = [ `Foo ]
+  let pp_error ppf `Foo = Fmt.string ppf "Foo"
   type t = C of string
   let pp ppf (C t) = Fmt.pf ppf "(C %S)" t
   let connect n = C n
 
-  let read (C n) off (* pages *) =
+  let read (C n) off pages =
     Logs.debug (fun l ->
-        l "READ[%s] off=%d pages=<..>" n off (* Fmt.(Dump.list string) pages*));
-    (* if off = 0 then Lwt.return (Error `Foo) else Lwt.return (Ok ()) *)
-    Lwt.return ()
+        l "READ[%s] off=%Ld pages=%a" n off Fmt.(Dump.list string) pages);
+    if off = 0L then Lwt.return (Error `Foo) else Lwt.return (Ok ())
 
 end
 
-module List = struct
-  include List
-  type 'a t = 'a list
-end
+let error_t = Alcotest.testable Block.pp_error (=)
 
 let lwt_t a =
   Alcotest.testable
@@ -255,10 +280,13 @@ let lwt_t a =
 
 let test_block () =
   let t = Type.abstract "Block.t" in
+  let error = Type.abstract "Block.error" in
   let primitives = [
     primitive "Block.connect" [Type.string] t Block.connect;
     primitive "Block.to_string" [t] Type.string (Fmt.to_to_string Block.pp);
-    L.primitive "Block.read" Type.[t; int] Type.(lwt unit) Block.read
+    L.primitive "Block.read"
+      Type.[t; int64; list string] Type.(lwt (result unit error))
+      Block.read
   ] in
   let t_t = Alcotest.testable Block.pp (=) in
   Alcotest.(check @@ ok t_t) "Block.connect"
@@ -269,11 +297,11 @@ let test_block () =
     (type_and_eval
        (parse_exn ~primitives "Block.to_string (Block.connect \"foo\")")
        Type.string);
-  Alcotest.(check @@ ok (lwt_t unit)) "read_exn"
-    (Ok (Lwt.return ()))
+  Alcotest.(check @@ ok (lwt_t (result unit error_t))) "read"
+    (Ok (Lwt.return (Ok ())))
     (L.type_and_eval
-       (parse_exn ~primitives "Block.read (Block.connect \"foo\") 1")
-       Type.(lwt unit));
+       (parse_exn ~primitives "Block.read (Block.connect \"foo\") 1L [\"x\"]")
+       Type.(lwt (result unit error)));
 
   let _ = Block.read in
   ()

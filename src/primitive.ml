@@ -25,15 +25,6 @@ module Args = struct
 
 end
 
-type args = Args: ('a, 'b) Args.t -> args
-
-let rec args_of_list: Parsetree.typ list -> args = function
-  | []   -> Args []
-  | h::t ->
-    let Type.V h = Type.typ h in
-    let Args t = args_of_list t in
-    Args (h :: t)
-
 type ('f, 'a) t = {
   name  : string;
   args  : ('f, 'a) Args.t;

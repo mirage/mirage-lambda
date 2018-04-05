@@ -68,6 +68,8 @@ rule program t = parse
   | white    { program t lexbuf }
   | newline  { Lexing.new_line lexbuf; program t lexbuf }
   | '"'      { string t lexbuf }
+  | (digit+ as s) 'L' { p t "INT64 %s" s; INT64 (Int64.of_string s) }
+  | (digit+ as s) 'l' { p t "INT32 %s" s; INT32 (Int32.of_string s) }
   | digit+ as s { p t "INT %s" s; INT (int_of_string s)}
   | "->"     { p t "ARROW"; ARROW }
   | "+"      { p t "PLUS"; PLUS }
@@ -76,14 +78,15 @@ rule program t = parse
   | "="      { p t "EQ"; EQ }
   | ","      { p t "COMMA"; COMMA }
   | ":"      { p t "COLON"; COLON }
-  | ";"      { p t "SEMICOLON"; SEMICOLON }
+  | ";"      { p t "SEMI"; SEMI }
   | "$"      { p t "DOLLAR"; DOLLAR }
   | "("      { p t "LPAR"; LPAR }
   | ")"      { p t "RPAR"; RPAR }
-  | "{"      { p t "LCUR"; LCUR }
-  | "}"      { p t "RCUR"; RCUR }
+  | "["      { p t "LSQU"; LSQU }
+  | "]"      { p t "RSQU"; RSQU }
   | "|"      { p t "BAR"; BAR }
   | "if"     { p t "IF"; IF }
+  | "then"   { p t "THEN"; THEN }
   | "else"   { p t "ELSE"; ELSE }
   | "R"      { p t "R"; R }
   | "L"      { p t "L"; L }
@@ -97,6 +100,16 @@ rule program t = parse
   | "true"   { p t "TRUE"; BOOL true }
   | "false"  { p t "FALSE"; BOOL false }
   | "int"    { p t "int"; S_INT }
+  | "int32"  { p t "int32"; S_INT32 }
+  | "int64"  { p t "int64"; S_INT64 }
+  | "list"   { p t "list"; S_LIST }
+  | "array"  { p t "array"; S_ARRAY }
+  | "option" { p t "option"; S_OPTION }
+  | "Ok"     { p t "Ok"; OK }
+  | "Error"  { p t "Error"; ERROR }
+  | "Some"   { p t "Some"; SOME }
+  | "None"   { p t "None"; NONE }
+  | "result" { p t "result"; S_RESULT }
   | "bool"   { p t "bool"; S_BOOL }
   | "string" { p t "string"; S_STRING }
   | var as s { p t "VAR %s" s; VAR s }

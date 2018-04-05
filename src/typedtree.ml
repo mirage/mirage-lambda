@@ -330,8 +330,10 @@ module Expr = struct
 
   let lambda t e = Lam (t, e)
   let apply f a = App (f, a)
+  let ($) = apply
 
   let fix t r s = Rec (t, r, s)
+
   let var x = Var x
   let if_ b t e = If (b, t, e)
 
@@ -347,6 +349,11 @@ module Expr = struct
   let snd e = Uno (Snd, e)
   let pair a b = Bin (Pair, a, b)
 
+  let let_rec l r f =
+    let context = var Var.o in
+    let return x = right x in
+    let continue x = left x in
+    fix l r (f ~context ~return ~continue)
 end
 
 type 'a typ = 'a Type.t

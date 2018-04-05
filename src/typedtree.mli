@@ -93,13 +93,20 @@ module Expr: sig
 
   val if_: ('a, bool) t -> ('a, 'b) t -> ('a, 'b) t -> ('a, 'b) t
 
-  val fix: 'a Type.t -> 'b Type.t -> ('c * 'a, ('a, 'b) Type.either) t ->
-    ('c, 'a -> 'b) t
+  val fix: 'a Type.t -> 'b Type.t ->
+    ('c * 'a, ('a, 'b) Type.either) t ->  ('c, 'a -> 'b) t
+
+  val let_rec: 'a Type.t -> 'b Type.t ->
+    (context : ('e *'a, 'a) t ->
+     return  :(('f, 'b) t -> ('f, ('a, 'b) Type.either) t) ->
+     continue:(('g, 'a) t -> ('g, ('a, 'b) Type.either) t) ->
+     ('e * 'a, ('a, 'b) Type.either) t
+    ) ->  ('e, 'a -> 'b) t
 
   val lambda: 'a Type.t -> ('b * 'a, 'c) t -> ('b, 'a -> 'c) t
   val apply: ('a, 'b -> 'c) t -> ('a, 'b) t -> ('a, 'c) t
   val eval: ('e, 'a) t -> 'e -> 'a
-
+  val ($): ('a, 'b -> 'c) t -> ('a, 'b) t -> ('a, 'c) t
 end
 
 type 'a typ = 'a Type.t

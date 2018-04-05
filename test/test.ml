@@ -99,21 +99,15 @@ let test_fact () =
 
   let safe =
     let open Expr in
-    let init = pair (lambda Type.int (int 1)) (var Var.o) in
     let main =
-      fix
-        Type.( (int @-> int) ** int )
-        Type.int
-        (if_
-           (snd (var Var.o) = int 0)
-           (right (apply (fst (var Var.o)) (int 0)))
-           (left  (pair
-                     (lambda Type.int
-                        (apply (fst (var Var.(o$x))) (var Var.o)
-                         * snd (var Var.(o$x))))
-                     (snd (var Var.o) - int 1))))
-    in
-    lambda Type.int (apply main init)
+      let_rec Type.(int ** int) Type.int (fun ~context ~return ~continue ->
+          let acc = fst context in
+          let n = snd context in
+          (if_ (n = int 0)
+             (return acc)
+             (continue (pair (acc * n) (n - int 1))))
+        ) in
+    lambda Type.int (main $ (pair (int 1) (var Var.o)))
   in
   Alcotest.(check @@ int) "safe" 120 (Expr.eval safe () 5);
 

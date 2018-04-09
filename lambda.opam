@@ -10,6 +10,8 @@ depends: [
   "jbuilder" {build}
   "fmt"
   "logs"
+  "lwt"
+  "menhir"
   "alcotest" {test}
 ]
 available: [

@@ -230,9 +230,9 @@ module Value = struct
 
   let untype_lwt:
     type a. a Lwt.t Type.t -> (a, Type.lwt) Type.app -> Parsetree.value =
-    fun t v ->
+    fun t (App v) ->
       let pp = Type.pp_val t in
-      Parsetree.V {v = Higher.Lwt.prj v; t; pp}
+      Parsetree.V {v = Type.Lwt.prj v; t; pp}
 
 end
 

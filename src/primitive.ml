@@ -113,6 +113,6 @@ module L = struct
     let inputs = untype_args [] v.args in
     Parsetree.primitive v.name inputs (Type.untype v.output) (fun l ->
         let r, _ = apply v.args v.body l in
-        Value.untype v.output (Higher.Lwt.inj r)
+        Value.untype v.output (App (Type.Lwt.inj r))
       )
 end

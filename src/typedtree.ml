@@ -202,7 +202,7 @@ module Var = struct
       V (Z, (t :: r), t)
 
     | n, t :: r ->
-      let V (x', r', tr) = typ {id=n-1} r in
+      let V (x', r', tr) = typ { Parsetree.id = n-1 } r in
       let Type.V t' = Type.typ t in
       V (S x', (t' :: r'), tr)
 

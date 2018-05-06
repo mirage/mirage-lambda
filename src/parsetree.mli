@@ -23,21 +23,39 @@ module Type: sig
 
   type t = private
     | Unit
+    (** Unit type. *)
     | Int
+    (** Native integer. *)
     | Int32
+    (** 32-bits integer. *)
     | Int64
+    (** 64-bits integer. *)
     | Bool
+    (** Bool type. *)
     | String
+    (** String type. *)
     | Lwt
+    (** Lwt constructor. *)
     | List of t
+    (** List type (unary type constructor). *)
     | Array of t
+    (** Array type (unary type constructor). *)
     | Option of t
+    (** Option type (unary type constructor). *)
     | Apply of t * t
+    (** Application of unary constructor with type. *)
     | Arrow of t * t
+    (** Function type constructor. *)
     | Pair of t * t
+    (** Pair type constructor. *)
     | Either of t * t
+    (** Either type constructor. *)
     | Result of t * t
+    (** Result type constructor. *)
     | Abstract of abstract
+    (** Abstract type. *)
+
+  (** {2 Type constructor.} *)
 
   val unit: t
   val int: t
@@ -56,51 +74,81 @@ module Type: sig
   val abstract: 'a Eq.witness -> t
   val apply: t -> t -> t
 
+  (** {2 Infix operators.} *)
+
   val ( ** ): t -> t -> t
   val ( @->): t -> t -> t
   val ( || ): t -> t -> t
 
+  (** {2 Pretty-printer.} *)
+
   val pp: t Fmt.t
 end
 
+(** OCaml value (with type and pretty-printer). *)
 type value = V: { v: 'a; t: 'a T.t; pp: 'a Fmt.t } -> value
 
+(** Type of {!expr}. *)
 type typ = Type.t
 
+(** De-bruijn variable. *)
 type var = {id: int}
 
+(** Arithmetic operations. *)
 type arithmetic = [ `Add | `Sub | `Mul | `Div ]
 
 type expr = private
   | Val of value
+  (** OCaml value. *)
   | Prm of primitive
+  (** Primitive. *)
   | Lst of typ option * expr list
+  (** List term. *)
   | Arr of typ option * expr array
+  (** Array term. *)
   | Opt of typ option * expr option
+  (** Option term. *)
   | Var of var
+  (** Variable. *)
   | Lam of typ * string * expr
+  (** Lambda expression. *)
   | Rec of { r: typ; p: string * typ; e: expr }
+  (** Recursive expression. *)
   | App of expr * expr
+  (** Application term. *)
   | Bin of binop * expr * expr
+  (** Binary operation. *)
   | Uno of unop * expr
+  (** Unary operation. *)
   | Let of typ * string * expr * expr
+  (** Let expression. *)
   | Swt of { a : expr
            ; b : expr
            ; s : expr }
+  (** Switch on either value term. *)
   | If  of expr * expr * expr
+  (** Conditional term. *)
 
 and primitive =
   { name : string
   ; typ  : typ list * typ
   ; exp  : value list -> value }
+(** A user-defined primitive. *)
 
 and binop =  [ arithmetic | `Pair | `Eq ]
+(** Binary operations. *)
+
+(** Unary operations. *)
 and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
+
+(** {2 Pretty-printers.} *)
 
 val pp: expr Fmt.t
 val pp_value: value Fmt.t
 
 val dump_var: var Fmt.t
+
+(** {2 Constructors.} *)
 
 val unit: expr
 
@@ -143,9 +191,11 @@ val fix: (string * typ) -> typ -> expr -> expr
 val var: int -> expr
 val primitive: string -> typ list -> typ -> (value list -> value) -> expr
 
+val equal: expr -> expr -> bool
+
+(** {2 Infix operators.} *)
+
 val ( = ): expr -> expr -> expr
 val ( + ): expr -> expr -> expr
 val ( - ): expr -> expr -> expr
 val ( * ): expr -> expr -> expr
-
-val equal: expr -> expr -> bool

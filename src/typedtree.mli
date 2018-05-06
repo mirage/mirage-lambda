@@ -16,16 +16,25 @@
  *)
 
 module Type: sig
+
   type lwt = Higher.Lwt.t
+
   type ('a, 'b) app = ('a, 'b) Higher.app
+
   type 'a t = 'a T.t
 
   type ('a, 'b) either = ('a, 'b) T.either =
-      | L of 'a
-      | R of 'b
+    | L of 'a
+    | R of 'b
 
   val eq: 'a t -> 'b t -> ('a, 'b) Eq.refl option
+  (** [eq a b] proves than [a] and [b] have the same type if we return [Some
+     Eq.Refl]. *)
+
   val untype: 'a t -> Parsetree.typ
+  (** [untype t] un-types [t] to a {!Parsetree.typ} value. *)
+
+  (** {2 Constructors.} *)
 
   val unit: unit t
   val int: int t
@@ -45,32 +54,60 @@ module Type: sig
   val either: 'a t -> 'b t -> ('a, 'b) either t
   val result: 'a t -> 'b t -> ('a, 'b) result t
 
+  (** {2 Infix operators.} *)
+
   val ( @->): 'a t -> 'b t -> ('a -> 'b) t
   val ( ** ): 'a t -> 'b t -> ('a * 'b) t
   val ( || ): 'a t -> 'b t -> ('a, 'b) either t
 
+  (** {2 Pretty-printer.} *)
+
   val pp_val: 'a t -> 'a Fmt.t
 
+  (** {2 Witness type value.} *)
+
   type v = V : 'a t -> v
+
   val typ: Parsetree.typ -> v
+  (** [typ ut] returns a witness of type [ut]. *)
 end
 
 module Value: sig
+
   val cast: Parsetree.value -> 'a Type.t -> 'a
+  (** [cast value typ] casts unsafe [value] with [typ]. If [value] does have the
+     type [typ], we raise [Invalid_argument]. *)
+
   val untype: 'a Type.t -> 'a -> Parsetree.value
+  (** [untype ty value] wraps [value] to {!Parsetree.value} and, by this way,
+     untypes it (however, we keep a witness of type). *)
+
   val untype_lwt: 'a Lwt.t Type.t -> ('a, Type.lwt) Type.app -> Parsetree.value
+  (** [untype_lwt ty value] wraps an LWT [value] to {!Parsetree.value} and, by this way,
+      untypes it (however, we keep a witness of type). *)
 end
 
 module Var: sig
+
   type ('a, 'b) t
+
   val o : ('a * 'b, 'b) t
+  (** Zero De-bruijn indice. *)
+
   val x : unit
+  (** Unit value. *)
+
   val ( $ ) : ('a, 'b) t -> unit -> ('a * 'c, 'b) t
+  (** Infix operator to construct De-bruijn indice in a church-style (e.g.
+     [o$x$x$x = 3]). *)
 end
 
 module Expr: sig
 
   type ('a, 'e) t
+  (** Type of a typed expression. *)
+
+  (** {2 Constructors.} *)
 
   val unit: ('a, unit) t
   val int: int -> ('a, int) t
@@ -85,11 +122,6 @@ module Expr: sig
   val right: ('a, 'b) t -> ('a, ('c, 'b) Type.either) t
 
   val var: ('a, 'b) Var.t -> ('a, 'b) t
-
-  val ( = ): ('a, 'b) t -> ('a, 'b) t -> ('a, bool) t
-  val ( + ): ('a, int) t -> ('a, int) t -> ('a, int) t
-  val ( - ): ('a, int) t -> ('a, int) t -> ('a, int) t
-  val ( * ): ('a, int) t -> ('a, int) t -> ('a, int) t
 
   val if_: ('a, bool) t -> ('a, 'b) t -> ('a, 'b) t -> ('a, 'b) t
 
@@ -106,17 +138,32 @@ module Expr: sig
   val lambda: 'a Type.t -> ('b * 'a, 'c) t -> ('b, 'a -> 'c) t
   val apply: ('a, 'b -> 'c) t -> ('a, 'b) t -> ('a, 'c) t
   val eval: ('e, 'a) t -> 'e -> 'a
-  val ($): ('a, 'b -> 'c) t -> ('a, 'b) t -> ('a, 'c) t
+
+  (** {2 Infix operators.} *)
+
+  val ( = ): ('a, 'b) t -> ('a, 'b) t -> ('a, bool) t
+  val ( + ): ('a, int) t -> ('a, int) t -> ('a, int) t
+  val ( - ): ('a, int) t -> ('a, int) t -> ('a, int) t
+  val ( * ): ('a, int) t -> ('a, int) t -> ('a, int) t
+  val ( $ ): ('a, 'b -> 'c) t -> ('a, 'b) t -> ('a, 'c) t
 end
 
 type 'a typ = 'a Type.t
+
 type expr = E: (unit, 'a) Expr.t * 'a Type.t -> expr
+(** Expression with type witness. *)
+
 type v    = V: 'a * 'a Type.t -> v
+(** Value with type witness. *)
 
 type error
+(** Type of errors. *)
+
 val pp_error: error Fmt.t
+(** Pretty-printer of {!error}. *)
 
 val typ: Parsetree.expr -> (expr, error) result
+(** [typ unsafe_expr] tries to type [unsafe_expr] and returns an {!expr}. *)
 
 val err_type_mismatch:
   Parsetree.expr -> 'a Type.t -> 'b Type.t -> ('c, error) result

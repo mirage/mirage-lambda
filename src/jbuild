@@ -1,7 +1,7 @@
 (library
  ((name        lambda)
   (public_name lambda)
-  (libraries   (fmt logs lwt))))
+  (libraries   (fmt logs lwt higher))))
 
 (ocamllex (lexer))
 

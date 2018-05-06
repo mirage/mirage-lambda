@@ -15,13 +15,16 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
+module Lwt = Higher.Newtype1(Lwt)
+let lwt: Lwt.t Eq.witness = Eq.witness "Lwt.t"
+
 type ('l, 'r) either = ('l, 'r) Eq.either =
   | L of 'l
   | R of 'r
 
-type ('a, 'b) app = ('a, 'b) Higher.app
+type ('a, 'b) app = App of ('a, 'b) Higher.app
 
-type lwt = Higher.Lwt.t
+type lwt = Lwt.t
 
 type _ t =
   | Unit    : unit t

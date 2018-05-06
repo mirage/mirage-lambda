@@ -1,5 +1,6 @@
 opam-version: "1.2"
 maintainer: "Thomas Gazagnaire <thomas@gazagnaire.org>"
+authors: ["Thomas Gazagnaire" "Romain Calascibetta"]
 homepage: "https://github.com/samoht/mirage-lambda"
 license: "ISC"
 dev-repo: "https://github.com/samoht/mirage-lambda.git"
@@ -10,6 +11,9 @@ depends: [
   "jbuilder" {build}
   "fmt"
   "logs"
+  "lwt"
+  "menhir"
+  "higher"
   "alcotest" {test}
 ]
 available: [

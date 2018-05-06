@@ -17,10 +17,10 @@
 
 module Type: sig
 
-  type lwt = Higher.Lwt.t
+  module Lwt: Higher.Newtype1 with type 'a s = 'a Lwt.t
+  type lwt = Lwt.t
 
-  type ('a, 'b) app = ('a, 'b) Higher.app
-
+  type ('a, 'b) app = App of ('a, 'b) Higher.app
   type 'a t = 'a T.t
 
   type ('a, 'b) either = ('a, 'b) T.either =

@@ -97,7 +97,7 @@ module L = struct
     = fun v t' ->
       let Typedtree.V (v, t) = v in
       match Type.eq t t' with
-      | Some Eq.Refl -> Some (Higher.Lwt.prj v)
+      | Some Eq.Refl -> let Type.App v = v in Some (Type.Lwt.prj v)
       | None         -> None
 
   let type_and_eval
@@ -109,7 +109,7 @@ module L = struct
     | Ok e         ->
       let Typedtree.V (v, t) = eval e in
       match Type.eq t t' with
-      | Some Eq.Refl -> Ok (Higher.Lwt.prj v)
-      | None   -> Typedtree.err_type_mismatch m t t'
+      | Some Eq.Refl -> let Type.App v = v in Ok (Type.Lwt.prj v)
+      | None         -> Typedtree.err_type_mismatch m t t'
 
 end

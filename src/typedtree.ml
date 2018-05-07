@@ -202,7 +202,7 @@ module Var = struct
       V (Z, (t :: r), t)
 
     | n, t :: r ->
-      let V (x', r', tr) = typ {id=n-1} r in
+      let V (x', r', tr) = typ { Parsetree.id = n-1 } r in
       let Type.V t' = Type.typ t in
       V (S x', (t' :: r'), tr)
 
@@ -374,6 +374,7 @@ type kind =
   | ExpectedPair of a_expr
   | ExpectedLambda of a_expr
   | ExpectedEither of a_expr
+  | ExpectedValue of a_expr
 
 type error = Parsetree.expr * Parsetree.typ list * kind list
 
@@ -390,6 +391,7 @@ let pp_kind ppf = function
   | ExpectedPair _     -> Fmt.pf ppf "a pair was expected"
   | ExpectedLambda _   -> Fmt.pf ppf "a lambda was expected"
   | ExpectedEither _   -> Fmt.pf ppf "either was expected"
+  | ExpectedValue _    -> Fmt.pf ppf "a value was expected"
 
 let pp_error ppf (e, ts, ks) =
   Fmt.pf ppf "error while evaluating:@ %a@ %a@ %a"
@@ -671,7 +673,7 @@ let typ e =
       | _ -> failwith "cannot type the empty list"
     in
     let tl = Type.list t in
-    let rec aux_l = function
+    let rec aux_l l = match l with
       | []   -> Expr (Con [], g0, tl)
       | a::b ->
         match aux a g, aux_l b with
@@ -686,7 +688,10 @@ let typ e =
              in
              Fmt.failwith "invalid list elt (%a, %a, %a, %a)"
                pp a pp b pp c pp d)
-        | _ -> failwith "TODO"
+        | x, _ ->
+          (* XXX(dinosaure): we don't need to check [b], [aux_l] returns in any
+             case a value or raise an error. *)
+          error e g [ ExpectedValue x ]
     in aux_l l
   in
   match aux e [] with

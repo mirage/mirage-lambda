@@ -46,7 +46,7 @@ let parse_exn ?primitives e =
   | Ok y           -> y
   | Error (`Msg e) -> Alcotest.failf "parsing: %s" e
 
-let _typ_exn e =
+let typ_exn e =
   match Lambda.typ e with
   | Ok y    -> y
   | Error e -> Alcotest.failf "typing: %a" Lambda.pp_error e

@@ -68,7 +68,7 @@ let eval e =
 
 let cast: type a. value -> a typ -> a option = fun v t' ->
   let Typedtree.V (v, t) = v in
-  match Type.eq t t' with
+  match Type.equal t t' with
   | Some Eq.Refl -> Some v
   | None         -> None
 
@@ -78,7 +78,7 @@ let type_and_eval:
   | Error _ as e -> e
   | Ok e         ->
     let Typedtree.V (v, t) = eval e in
-    match Type.eq t t' with
+    match Type.equal t t' with
     | Some Eq.Refl -> Ok v
     | None   -> Typedtree.err_type_mismatch m t t'
 
@@ -104,7 +104,7 @@ module L = struct
     : type a. value -> (a, Type.lwt) Type.app typ -> a Lwt.t option
     = fun v t' ->
       let Typedtree.V (v, t) = v in
-      match Type.eq t t' with
+      match Type.equal t t' with
       | Some Eq.Refl -> let Type.App v = v in Some (Type.Lwt.prj v)
       | None         -> None
 
@@ -116,7 +116,7 @@ module L = struct
     | Error _ as e -> e
     | Ok e         ->
       let Typedtree.V (v, t) = eval e in
-      match Type.eq t t' with
+      match Type.equal t t' with
       | Some Eq.Refl -> let Type.App v = v in Ok (Type.Lwt.prj v)
       | None         -> Typedtree.err_type_mismatch m t t'
 

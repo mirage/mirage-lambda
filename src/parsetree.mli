@@ -83,6 +83,7 @@ module Type: sig
   (** {2 Pretty-printer.} *)
 
   val pp: t Fmt.t
+  val dump: t Fmt.t
 end
 
 (** OCaml value (with type and pretty-printer). *)
@@ -145,6 +146,8 @@ and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
 (** {2 Pretty-printers.} *)
 
 val pp: expr Fmt.t
+val dump: expr Fmt.t
+
 val pp_value: value Fmt.t
 
 val dump_var: var Fmt.t

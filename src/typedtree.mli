@@ -27,7 +27,7 @@ module Type: sig
     | L of 'a
     | R of 'b
 
-  val eq: 'a t -> 'b t -> ('a, 'b) Eq.refl option
+  val equal: 'a t -> 'b t -> ('a, 'b) Eq.refl option
   (** [eq a b] proves than [a] and [b] have the same type if we return [Some
      Eq.Refl]. *)
 

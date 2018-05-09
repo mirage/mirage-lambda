@@ -165,7 +165,7 @@ module Env = struct
   let rec eq: type a b. a t -> b t -> (a, b) Eq.refl option = fun a b ->
     match a, b with
     | [], []               -> Some Eq.Refl
-    | (at :: a), (bt :: b) -> Eq.(eq a b >*= fun Refl -> Type.eq at bt)
+    | (at :: a), (bt :: b) -> Eq.(eq a b >*= fun Refl -> Type.equal at bt)
     | _ -> None
 
   type v = V : 'a t -> v
@@ -224,7 +224,7 @@ module Value = struct
 
   let cast: type a. Parsetree.value -> a Type.t -> a = fun x t ->
     let Parsetree.V v = x in
-    match Type.eq v.t t with
+    match Type.equal v.t t with
     | Some Eq.Refl -> v.v
     | None -> error x t
 
@@ -484,7 +484,7 @@ module Expr = struct
     List.fold_right (fun t -> function
         | Expr (a, Env.(ta :: e), tr) ->
           let Type.V t' = Type.typ t in
-          (match Type.eq ta t' with
+          (match Type.equal ta t' with
            | Some Eq.Refl ->
              Expr (Lam (t', name (), a), e, Arrow (t', tr))
            | None ->
@@ -554,7 +554,7 @@ module Expr = struct
          | None   -> ()
          | Some t ->
            let Type.V t = Type.typ t in
-           match Type.eq t tr' with
+           match Type.equal t tr' with
            | Some Eq.Refl -> ()
            | _ -> failwith "wrong constraint for option type");
         (match Env.eq g' g'' with
@@ -578,7 +578,7 @@ module Expr = struct
         let Type.V t' = Type.typ t in
         (match aux e (t :: g) with
          | Expr (e', Env.(t'' :: g'), tr) ->
-           (match Type.eq t' t'' with
+           (match Type.equal t' t'' with
             | Some Eq.Refl -> Expr (Lam (t', n, e'), g', Type.Arrow (t', tr))
             | None ->
               Log.err (fun l -> l "Abs");
@@ -590,7 +590,7 @@ module Expr = struct
         (match aux fu g, aux a g with
          | Expr (f', g', (Type.Arrow (t', u'))),
            Expr (a', g'', t'') ->
-           (match Env.eq g' g'', Type.eq t' t'' with
+           (match Env.eq g' g'', Type.equal t' t'' with
             | Some Eq.Refl, Some Eq.Refl ->
               Expr (App (f', a'), g', u')
             | _, _ ->
@@ -623,7 +623,7 @@ module Expr = struct
         let Type.V t' = Type.typ t in
         (match aux a g, aux b (t :: g) with
          | Expr (a', g'', t''), Expr (f', g''', r') ->
-           (match Type.eq t' t'' , Env.eq g' g'', Env.eq (t'' :: g'') g''' with
+           (match Type.equal t' t'' , Env.eq g' g'', Env.eq (t'' :: g'') g''' with
             | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
               Expr (Let (t', n, a', f'), g', r')
             | _, _, _ ->
@@ -636,7 +636,7 @@ module Expr = struct
          | Expr (t', g', Type.Bool),
            Expr (a', g'', u'),
            Expr (b', g''', v') ->
-           (match Type.eq u' v', Env.eq g' g'', Env.eq g'' g''' with
+           (match Type.equal u' v', Env.eq g' g'', Env.eq g'' g''' with
             | Some Eq.Refl, Some (Eq.Refl as ae), Some (Eq.Refl as be) ->
               (match Eq.trans ae be with Eq.Refl -> Expr (If (t', a', b'), g', u'))
             | _, _, _ ->
@@ -650,7 +650,7 @@ module Expr = struct
       | Bin (`Eq, a, b) ->
         let Expr (a', g', ta') = aux a g in
         let Expr (b', g'', tb') = aux b g in
-        (match Type.eq ta' tb', Env.eq g' g'' with
+        (match Type.equal ta' tb', Env.eq g' g'' with
          | Some Eq.Refl, Some Eq.Refl -> Expr (Bin (Eq, a', b'), g', Bool)
          | _, _ -> assert false)
       | Swt { a; b; s; } ->
@@ -661,9 +661,9 @@ module Expr = struct
            (match aux a (l :: g), aux b (r :: g) with
             | Expr (a', Env.(l'' :: ag''), ar),
               Expr (b', Env.(r'' :: bg''), br) ->
-              (match Type.eq l' l'', Type.eq r' r'',
+              (match Type.equal l' l'', Type.equal r' r'',
                      Env.eq ag'' g'', Env.eq bg'' g'',
-                     Type.eq ar br with
+                     Type.equal ar br with
               | Some Eq.Refl, Some Eq.Refl,
                 Some Eq.Refl, Some Eq.Refl,
                 Some Eq.Refl ->
@@ -690,7 +690,7 @@ module Expr = struct
         let tb = Type.Arrow (p, r) in
         (match aux e (ptyp :: g) with
          | Expr (e', Env.(te' :: g''), tr) ->
-           (match Type.eq tr te, Type.eq te' p, Env.eq g' g'' with
+           (match Type.equal tr te, Type.equal te' p, Env.eq g' g'' with
             | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
               Expr (fix (n, p) r e', g', tb)
             | Some Eq.Refl, None, _ ->
@@ -717,7 +717,7 @@ module Expr = struct
         | a::b ->
           match aux a g, aux_l b with
           | Expr (Val e1, g1 , t1), Expr (Val e2, g2, t2) ->
-            (match Type.eq t t1, Type.eq tl t2, Env.eq g0 g1, Env.eq g0 g2 with
+            (match Type.equal t t1, Type.equal tl t2, Env.eq g0 g1, Env.eq g0 g2 with
              | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
                Expr (list t (e1.v :: e2.v), g0, tl)
              | a, b, c, d ->

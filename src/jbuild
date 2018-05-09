@@ -1,7 +1,8 @@
 (library
  ((name        lambda)
   (public_name lambda)
-  (libraries   (fmt logs lwt higher))))
+  (libraries   (fmt logs lwt higher))
+  (preprocess  (pps (ppx_deriving.show ppx_deriving.eq)))))
 
 (ocamllex (lexer))
 

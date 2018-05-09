@@ -44,7 +44,7 @@ type _ t =
   | Either  : 'a t * 'b t -> ('a, 'b) either t
   | Result  : 'a t * 'b t -> ('a, 'b) result t
 
-let rec eq: type a b. a t -> b t -> (a, b) Eq.refl option = fun a b ->
+let rec equal: type a b. a t -> b t -> (a, b) Eq.refl option = fun a b ->
   match a, b with
   | Unit  , Unit   -> Some Eq.Refl
   | Int   , Int    -> Some Eq.Refl
@@ -54,23 +54,23 @@ let rec eq: type a b. a t -> b t -> (a, b) Eq.refl option = fun a b ->
   | String, String -> Some Eq.Refl
   | Lwt   , Lwt    -> Some Eq.Refl
   | List a  , List b   ->
-    (match eq a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
+    (match equal a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
   | Array a , Array b  ->
-    (match eq a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
+    (match equal a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
   | Option a, Option b ->
-    (match eq a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
+    (match equal a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
   | Abstract a, Abstract b -> Eq.Witness.eq a.wit b.wit
   | Apply (a, a') , Apply (b, b')  ->
-    (match eq a b, eq a' b' with
+    (match equal a b, equal a' b' with
      | Some Eq.Refl, Some Eq.Refl -> Some Eq.Refl
      | _ -> None)
-  | Arrow (a, a') , Arrow (b, b')  -> Eq.(eq a b >>= fun Refl -> eq a' b')
-  | Either (a, a'), Either (b, b') -> Eq.(eq a b >?= fun Refl -> eq a' b')
+  | Arrow (a, a') , Arrow (b, b')  -> Eq.(equal a b >>= fun Refl -> equal a' b')
+  | Either (a, a'), Either (b, b') -> Eq.(equal a b >?= fun Refl -> equal a' b')
   | Result (a, a'), Result (b, b') ->
-    (match eq a b, eq a' b' with
+    (match equal a b, equal a' b' with
      | Some Eq.Refl, Some Eq.Refl -> Some Eq.Refl
      | _ -> None)
-  | Pair  (a, a') , Pair  (b, b')  -> Eq.(eq a b >&= fun Refl -> eq a' b')
+  | Pair  (a, a') , Pair  (b, b')  -> Eq.(equal a b >&= fun Refl -> equal a' b')
   | Int , _ -> None | Bool, _ -> None | String, _ -> None
   | Abstract _, _ -> None | Arrow _, _ -> None | Either _, _ -> None
   | Pair _, _ -> None | Unit, _ -> None | Lwt, _ -> None

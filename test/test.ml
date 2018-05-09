@@ -37,7 +37,7 @@ let () =
 
 open Lambda
 
-let pexpr = Alcotest.testable Parsetree.pp Parsetree.equal
+let pexpr = Alcotest.testable Parsetree.dump Parsetree.equal
 let error = Alcotest.testable pp_error (=)
 let ok x = Alcotest.result x error
 

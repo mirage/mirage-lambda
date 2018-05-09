@@ -131,7 +131,8 @@ type expr = private
 
 and primitive =
   { name : string
-  ; typ  : typ list * typ
+  ; args : typ list
+  ; ret  : typ
   ; exp  : value list -> value }
 (** A user-defined primitive. *)
 
@@ -151,6 +152,7 @@ val dump_var: var Fmt.t
 (** {2 Constructors.} *)
 
 val unit: expr
+val prim: primitive -> expr
 
 val int: int -> expr
 val int32: int32 -> expr
@@ -191,11 +193,12 @@ val fix: (string * typ) -> typ -> expr -> expr
 val var: int -> expr
 val primitive: string -> typ list -> typ -> (value list -> value) -> expr
 
-val equal: expr -> expr -> bool
-
 (** {2 Infix operators.} *)
 
 val ( = ): expr -> expr -> expr
 val ( + ): expr -> expr -> expr
 val ( - ): expr -> expr -> expr
 val ( * ): expr -> expr -> expr
+val ( / ): expr -> expr -> expr
+
+val equal: expr -> expr -> bool

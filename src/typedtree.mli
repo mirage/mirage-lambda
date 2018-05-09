@@ -109,8 +109,15 @@ module Expr: sig
 
   (** {2 Constructors.} *)
 
-  val unit: ('a, unit) t
+  val unit: unit -> ('a, unit) t
   val int: int -> ('a, int) t
+  val int32: int32 -> ('a, int32) t
+  val int64: int64 -> ('a, int64) t
+
+  val list: 'a Type.t -> 'a list -> ('e, 'a list) t
+  val array: 'a Type.t -> 'a array -> ('e, 'a array) t
+  val option: 'a Type.t -> 'a option -> ('a, 'a option) t
+
   val bool: bool -> ('a, bool) t
   val string: string -> ('a, string) t
   val pair: ('a, 'b) t -> ('a, 'c) t -> ('a, 'b * 'c) t
@@ -118,24 +125,26 @@ module Expr: sig
   val fst: ('a, 'b * 'c) t -> ('a, 'b) t
   val snd: ('a, 'b * 'c) t -> ('a, 'c) t
 
-  val left : ('a, 'b) t -> ('a, ('b, 'c) Type.either) t
-  val right: ('a, 'b) t -> ('a, ('c, 'b) Type.either) t
+  val left : ('a, 'b) t -> 'c Type.t -> ('a, ('b, 'c) Type.either) t
+  val right: 'c Type.t -> ('a, 'b) t -> ('a, ('c, 'b) Type.either) t
 
   val var: ('a, 'b) Var.t -> ('a, 'b) t
 
   val if_: ('a, bool) t -> ('a, 'b) t -> ('a, 'b) t -> ('a, 'b) t
 
-  val fix: 'a Type.t -> 'b Type.t ->
+  val fix:
+    (string * 'a Type.t) -> 'b Type.t ->
     ('c * 'a, ('a, 'b) Type.either) t ->  ('c, 'a -> 'b) t
 
-  val let_rec: 'a Type.t -> 'b Type.t ->
+  val let_rec:
+    (string * 'a Type.t) -> 'b Type.t ->
     (context : ('e *'a, 'a) t ->
      return  :(('f, 'b) t -> ('f, ('a, 'b) Type.either) t) ->
      continue:(('g, 'a) t -> ('g, ('a, 'b) Type.either) t) ->
      ('e * 'a, ('a, 'b) Type.either) t
     ) ->  ('e, 'a -> 'b) t
 
-  val lambda: 'a Type.t -> ('b * 'a, 'c) t -> ('b, 'a -> 'c) t
+  val lambda: (string * 'a Type.t) -> ('b * 'a, 'c) t -> ('b, 'a -> 'c) t
   val apply: ('a, 'b -> 'c) t -> ('a, 'b) t -> ('a, 'c) t
   val eval: ('e, 'a) t -> 'e -> 'a
 
@@ -146,24 +155,26 @@ module Expr: sig
   val ( - ): ('a, int) t -> ('a, int) t -> ('a, int) t
   val ( * ): ('a, int) t -> ('a, int) t -> ('a, int) t
   val ( $ ): ('a, 'b -> 'c) t -> ('a, 'b) t -> ('a, 'c) t
+
+  val untype: ('e, 'a) t -> Parsetree.expr
+
+  type error
+  (** Type of errors. *)
+
+  val pp_error: error Fmt.t
+  (** Pretty-printer of {!error}. *)
+
+  type v = V: (unit, 'a) t * 'a Type.t -> v
+
+  val typ: Parsetree.expr -> (v, error) result
+  (** [typ unsafe_expr] tries to type [unsafe_expr] and returns an {!expr}. *)
+
 end
 
 type 'a typ = 'a Type.t
-
-type expr = E: (unit, 'a) Expr.t * 'a Type.t -> expr
-(** Expression with type witness. *)
-
-type v    = V: 'a * 'a Type.t -> v
+type expr = Expr.v
+type value = V: 'a * 'a Type.t -> value
 (** Value with type witness. *)
 
-type error
-(** Type of errors. *)
-
-val pp_error: error Fmt.t
-(** Pretty-printer of {!error}. *)
-
-val typ: Parsetree.expr -> (expr, error) result
-(** [typ unsafe_expr] tries to type [unsafe_expr] and returns an {!expr}. *)
-
 val err_type_mismatch:
-  Parsetree.expr -> 'a Type.t -> 'b Type.t -> ('c, error) result
+  Parsetree.expr -> 'a Type.t -> 'b Type.t -> ('c, Expr.error) result

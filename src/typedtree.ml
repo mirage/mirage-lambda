@@ -18,6 +18,10 @@
 let src = Logs.Src.create "lambda"
 module Log = (val Logs.src_log src : Logs.LOG)
 
+let fst_ = fst
+let snd_ = snd
+let (--) = (-)
+
 module Type = struct
 
   let pp_infix ~infix pp_a pp_b ppf (a, b) =
@@ -181,9 +185,9 @@ module Var = struct
     | Z : ('e * 'a, 'a) t
     | S : ('e, 'a) t -> ('e * 'b, 'a) t
 
-  (*   let rec int_of_var : type e a. (e, a) t -> int = function
-       | Z -> 1
-       | S n -> 1 + (int_of_var n) *)
+  let rec to_int : type e a. (e, a) t -> int = function
+    | Z -> 0
+    | S n -> 1 + (to_int n)
 
   let o = Z
   let x = ()
@@ -236,6 +240,43 @@ module Value = struct
 
 end
 
+module Prim = struct
+
+  type ('r, 'e) t = { p: Parsetree.primitive; f: (env:'e -> 'r) }
+
+  type v = V: ('a, 'b) t * 'b Env.t * 'a Type.t -> v
+
+  let env_to_list g e =
+    let rec aux:
+      type e. Parsetree.value list -> e Env.t -> e -> Parsetree.value list
+      = fun a g e -> match g, e with
+        | Env.(t :: tr), (vr, v) ->
+          let c = Value.untype t v in
+          aux (c :: a) tr vr
+        | Env.([]), () -> a
+    in
+    aux [] g e
+
+  let typ: Parsetree.primitive -> Parsetree.typ list -> v =
+    fun p g ->
+      let rec chop n l = match n, l with
+        | 0, l -> l
+        | n, _ :: r -> chop (n -- 1) r
+        | _, _ -> assert false
+      in
+      let miss = List.length g in
+      let Env.V g' = Env.typ List.(rev_append p.args g) in
+      let Type.V typ = Type.typ p.ret in
+      V ({ p; f = (fun ~env ->
+          let ua = env_to_list g' env in
+          let uc = p.exp (chop miss ua) in
+          Value.cast uc typ
+        )}, g', typ)
+
+  let untype: ('e, 'a) t -> Parsetree.primitive = fun p -> p.p
+
+end
+
 module Expr = struct
 
   type ('l, 'r, 'v) binop =
@@ -249,30 +290,34 @@ module Expr = struct
   type ('u, 'v) unop =
     | Fst: ('a * 'b, 'a) unop
     | Snd: ('a * 'b, 'b) unop
-    | L  : ('a, ('a, 'b) Type.either) unop
-    | R  : ('b, ('a, 'b) Type.either) unop
-    | Oky: ('a, ('a, 'b) result) unop
-    | Err: ('b, ('a, 'b) result) unop
+    | L  : 'b Type.t -> ('a, ('a, 'b) Type.either) unop
+    | R  : 'a Type.t -> ('b, ('a, 'b) Type.either) unop
+    | Oky: 'b Type.t -> ('a, ('a, 'b) result) unop
+    | Err: 'a Type.t -> ('b, ('a, 'b) result) unop
 
-  type ('r, 'e) prim =
-    { name : string
-    ; exp  : (env:'e -> 'r)
-    ; env  : 'e Env.t
-    ; typ  : 'r Type.t }
+  type 'a value = {
+    t : 'a Type.t;
+    v : 'a;
+    pp: 'a Fmt.t;
+  }
+
+  type ('e, 'p, 'r) rec_ = {
+    r   : 'r Type.t;                           (* type of the return function *)
+    p   : (string * 'p Type.t);             (* name and type of the parameter *)
+    body: ('e * 'p, ('p, 'r) Type.either) t;                 (* function body *)
+  }
 
   and ('e, 'a) t =
-    | Con : 'a -> ('e, 'a) t
-    | Prm : ('r, 'e) prim -> ('e, 'r) t
+    | Val : 'a value -> ('e, 'a) t
+    | Prm : ('r, 'e) Prim.t -> ('e, 'r) t
     | Uno : ('a, 'res) unop * ('e, 'a) t -> ('e, 'res) t
     | Opt : 'a Type.t * ('e, 'a) t option -> ('e, 'a option) t
     | Bin : ('a, 'b, 'res) binop * ('e, 'a) t * ('e, 'b) t -> ('e, 'res) t
     | Var : ('e, 'a) Var.t -> ('e, 'a) t
-    | Lam : 'a Type.t * ('e * 'a, 'b) t -> ('e, 'a -> 'b) t
-    | Rec : 'p Type.t * 'r Type.t *
-            ('e * 'p, ('p, 'r) Type.either) t ->
-            ('e, 'p -> 'r) t
+    | Lam : 'a Type.t * string * ('e * 'a, 'b) t -> ('e, 'a -> 'b) t
+    | Rec : ('e, 'p, 'r) rec_ -> ('e, 'p -> 'r) t
     | App : ('e, 'a -> 'b) t * ('e, 'a) t -> ('e, 'b) t
-    | Let : 'a Type.t * ('e, 'a) t * ('e * 'a, 'b) t -> ('e, 'b) t
+    | Let : 'a Type.t * string * ('e, 'a) t * ('e * 'a, 'b) t -> ('e, 'b) t
     | Swt : { s : ('e, ('l, 'r) Type.either) t
             ; a : ('e * 'l, 'a) t
             ; b : ('e * 'r, 'a) t } -> ('e, 'a) t
@@ -285,18 +330,18 @@ module Expr = struct
 
   let rec eval: type e a. (e, a) t -> e -> a = fun x e ->
     match x with
-    | Con i -> i
-    | Prm { exp; _ } -> exp ~env:e
-    | Uno (L  , x) -> L (eval x e)
-    | Uno (R  , x) -> R (eval x e)
-    | Uno (Oky, x) -> Ok (eval x e)
-    | Uno (Err, x) -> Error (eval x e)
+    | Val v        -> v.v
+    | Prm { f; _ } -> f ~env:e
+    | Uno (L _, x) -> L (eval x e)
+    | Uno (R _, x) -> R (eval x e)
+    | Uno (Oky _, x) -> Ok (eval x e)
+    | Uno (Err _, x) -> Error (eval x e)
     | Uno (Fst, x) -> fst (eval x e)
     | Uno (Snd, x) -> snd (eval x e)
     | Opt (_, Some x) -> Some (eval x e)
     | Opt (_, None)   -> None
     | Var x -> get x e
-    | Lam (_, r) -> (fun v -> eval r (e, v))
+    | Lam (_, _, r) -> (fun v -> eval r (e, v))
     | App (f, a) -> (eval f e) (eval a e)
     | Bin (Add, l, r) -> (eval l e) + (eval r e)
     | Bin (Sub, l, r) -> (eval l e) - (eval r e)
@@ -304,14 +349,14 @@ module Expr = struct
     | Bin (Div, l, r) -> (eval l e) / (eval r e)
     | Bin (Pair, l, r) -> (eval l e, eval r e)
     | Bin (Eq, l, r) -> (eval l e) = (eval r e)
-    | Let (_, a, f) ->
+    | Let (_, _, a, f) ->
       eval f (e, (eval a e))
     | Swt { s; a; b; } ->
       (match eval s e with
        | L l -> eval a (e, l)
        | R r -> eval b (e, r))
-    | Rec (_, _, f) ->
-      let rec loop a = match eval f (e, a) with
+    | Rec r ->
+      let rec loop a = match eval r.body (e, a) with
         | L a -> loop a
         | R r -> r
       in
@@ -323,16 +368,24 @@ module Expr = struct
 
   (* combinators *)
 
-  let unit = Con ()
-  let int (x:int) = Con x
-  let bool (x:bool) = Con x
-  let string (x:string) = Con x
+  let value t v = Val {t; v; pp = Type.pp_val t}
 
-  let lambda t e = Lam (t, e)
+  let unit   _ = value Unit ()
+  let int    x = value Int x
+  let int32  x = value Int32 x
+  let int64  x = value Int64 x
+  let bool   x = value Bool x
+  let string x = value String x
+
+  let list t = value (List t)
+  let array t = value (Array t)
+  let option t = value (Option t)
+
+  let lambda (n, t) e = Lam (t, n, e)
   let apply f a = App (f, a)
   let ($) = apply
 
-  let fix t r s = Rec (t, r, s)
+  let fix p r body = Rec { r; p; body }
 
   let var x = Var x
   let if_ b t e = If (b, t, e)
@@ -342,8 +395,8 @@ module Expr = struct
   let ( * ) a b = Bin (Mul, a, b)
   let ( - ) a b = Bin (Sub, a, b)
 
-  let left e = Uno (L, e)
-  let right e = Uno (R, e)
+  let left e r = Uno (L r, e)
+  let right l e = Uno (R l, e)
 
   let fst e = Uno (Fst, e)
   let snd e = Uno (Snd, e)
@@ -351,354 +404,347 @@ module Expr = struct
 
   let let_rec l r f =
     let context = var Var.o in
-    let return x = right x in
-    let continue x = left x in
+    let return x = right (snd_ l) x in
+    let continue x = left x r in
     fix l r (f ~context ~return ~continue)
+
+  let rec untype: type a e. (e, a) t -> Parsetree.expr = fun e ->
+    let module P = Parsetree in
+    match e with
+    | Val {v;t;pp}     -> P.value v t pp
+    | Prm x            -> P.prim (Prim.untype x)
+    | Uno (Fst, x)     -> P.fst (untype x)
+    | Uno (Snd, x)     -> P.snd (untype x)
+    | Uno (L r, x)     -> P.left (Type.untype r) (untype x)
+    | Uno (R l, x)     -> P.right (Type.untype l) (untype x)
+    | Uno (Oky e, x)   -> P.ok (Type.untype e) (untype x)
+    | Uno (Err o, x)   -> P.error (Type.untype o) (untype x)
+    | Opt (t, None)    -> P.none (Type.untype t)
+    | Opt (_, Some x)  -> P.some (untype x)
+    | Bin (Add, x, y)  -> P.(untype x + untype y)
+    | Bin (Mul, x, y)  -> P.(untype x * untype y)
+    | Bin (Sub, x, y)  -> P.(untype x - untype y)
+    | Bin (Div, x, y)  -> P.(untype x / untype y)
+    | Bin (Eq , x, y)  -> P.(untype x = untype y)
+    | Bin (Pair, x, y) -> P.pair (untype x) (untype y)
+    | Var x            -> P.var (Var.to_int x)
+    | Lam (t, n, e)    -> P.lambda [n, Type.untype t] (untype e)
+    | App (a, b)       -> P.apply (untype a) (untype b)
+    | Let (t, n, e, b) -> P.let_var (Type.untype t) n (untype e) (untype b)
+    | If (a, b, c)     -> P.if_ (untype a) (untype b) (untype c)
+    | Rec re           ->
+      let r = Type.untype re.r in
+      let p = fst_ re.p, Type.untype (snd_ re.p) in
+      let b = untype re.body in
+      P.fix p r b
+    | Swt _ -> failwith "TODO"
+
+  type v = V: (unit, 'a) t * 'a Type.t -> v
+
+  type a_expr = Expr: ('e, 'a) t * 'e Env.t * 'a Type.t -> a_expr
+
+  type kind =
+    | EnvMismatch of { g  : Env.v
+                     ; g' : Env.v }
+    | TypMismatch of { a  : Type.v
+                     ; b  : Type.v }
+    | ExpectedPair of a_expr
+    | ExpectedLambda of a_expr
+    | ExpectedEither of a_expr
+    | ExpectedValue of a_expr
+
+  type error = Parsetree.expr * Parsetree.typ list * kind list
+
+  exception Break of error
+
+  let error expr ts es = raise (Break (expr, ts, es))
+
+  let pp_typ ppf (Type.V t) = Type.pp ppf t
+
+  let pp_kind ppf = function
+    | EnvMismatch _      -> Fmt.pf ppf "env mismatch"
+    | TypMismatch {a; b} ->
+      Fmt.pf ppf "%a is not compatible with %a" pp_typ a pp_typ b
+    | ExpectedPair _     -> Fmt.pf ppf "a pair was expected"
+    | ExpectedLambda _   -> Fmt.pf ppf "a lambda was expected"
+    | ExpectedEither _   -> Fmt.pf ppf "either was expected"
+    | ExpectedValue _    -> Fmt.pf ppf "a value was expected"
+
+  let pp_error ppf (e, ts, ks) =
+    Fmt.pf ppf "error while evaluating:@ %a@ %a@ %a"
+      Parsetree.pp e
+      Fmt.(Dump.list Parsetree.Type.pp) ts
+      Fmt.(Dump.list pp_kind) ks
+
+  let uncurry args =
+    let name =
+      let n = ref 0 in
+      fun () -> incr n; Fmt.strf "x%d" !n
+    in
+    List.fold_right (fun t -> function
+        | Expr (a, Env.(ta :: e), tr) ->
+          let Type.V t' = Type.typ t in
+          (match Type.eq ta t' with
+           | Some Eq.Refl ->
+             Expr (Lam (t', name (), a), e, Arrow (t', tr))
+           | None ->
+             Fmt.invalid_arg "Type mismatch: %a <> %a." Type.pp ta Type.pp t')
+        | _ -> invalid_arg "Impossible to uncurry, environment mismatch")
+      args
+
+  let typ e =
+    let rec aux: Parsetree.expr -> Parsetree.typ list -> a_expr = fun e g ->
+      let Env.V g' = Env.typ g in
+      match e with
+      | Val (Parsetree.V {v;t;pp}) -> Expr (Val {v;t;pp}, g', t)
+      | Lst (t, l) -> typ_list t l g
+      | Arr (t, a) ->
+        (match typ_list t (Array.to_list a) g with
+         | Expr (Val v, g, Type.List t) ->
+           Expr (array t (Array.of_list v.v), g, Type.array t)
+         | _ -> assert false)
+      | Prm p ->
+        let Prim.V (x, y, z) = Prim.typ p g in
+        uncurry p.args (Expr (Prm x, y, z))
+      | Uno (L tr, x) ->
+        let Type.V tr' = Type.typ tr in
+        let Expr (x', g'', tx') = aux x g in
+        (match Env.eq g' g'' with
+         | Some Eq.Refl -> Expr (Uno (L tr', x'), g', Either (tx', tr'))
+         | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+      | Uno (Ok tr, x) ->
+        let Type.V tr' = Type.typ tr in
+        let Expr (x', g'', tx') = aux x g in
+        (match Env.eq g' g'' with
+         | Some Eq.Refl -> Expr (Uno (Oky tr', x'), g', Result (tx', tr'))
+         | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+      | Uno (R tl, x) ->
+        let Type.V tl' = Type.typ tl in
+        let Expr (x', g'', tx') = aux x g in
+        (match Env.eq g' g'' with
+         | Some Eq.Refl -> Expr (Uno (R tl', x'), g', Either (tl', tx'))
+         | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+      | Uno (Error tl, x) ->
+        let Type.V tl' = Type.typ tl in
+        let Expr (x', g'', tx') = aux x g in
+        (match Env.eq g' g'' with
+         | Some Eq.Refl -> Expr (Uno (Err tl', x'), g', Result (tl', tx'))
+         | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+      | Uno (Fst, x) ->
+        (match aux x g with
+         | Expr (x', g'', Type.Pair (ta', _)) ->
+           (match Env.eq g' g'' with
+            | Some Eq.Refl -> Expr (Uno (Fst, x'), g', ta')
+            | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+         | wexpr -> error e g [ ExpectedPair wexpr ])
+      | Uno (Snd, x) ->
+        (match aux x g with
+         | Expr (x', g'', Type.Pair (_, tb')) ->
+           (match Env.eq g' g'' with
+            | Some Eq.Refl -> Expr (Uno (Snd, x'), g', tb')
+            | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+         | wexpr -> error e g [ ExpectedPair wexpr ])
+      | Opt (tr, None) ->
+        let tr = match tr with Some t -> t | None -> failwith "cannot type None" in
+        let Type.V tr' = Type.typ tr in
+        Expr (Opt (tr', None), g', Option tr')
+      | Opt (tr, Some x) ->
+        let Expr (x', g'', tr') = aux x g in
+        (match tr with
+         | None   -> ()
+         | Some t ->
+           let Type.V t = Type.typ t in
+           match Type.eq t tr' with
+           | Some Eq.Refl -> ()
+           | _ -> failwith "wrong constraint for option type");
+        (match Env.eq g' g'' with
+         | Some Eq.Refl -> Expr (Opt (tr', Some x'), g', Option tr')
+         | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+      | Bin (`Pair, a, b) ->
+        let Expr (a', g'', ta') = aux a g in
+        let Expr (b', g''', tb') = aux b g in
+        (match Env.eq g' g'', Env.eq g'' g''' with
+         | Some (Eq.Refl as g1), Some (Eq.Refl as g2) ->
+           (match Eq.trans g1 g2 with
+            | Eq.Refl -> Expr (Bin (Pair, a', b'), g', Pair (ta', tb')))
+         | _, _ ->
+           Log.err (fun l -> l "Bin `Pair");
+           error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' }
+                     ; EnvMismatch { g = Env.V g''; g' = Env.V g''' } ])
+      | Var x ->
+        let Var.V (x', g'', t') = Var.typ x g in
+        Expr (Var x', g'', t')
+      | Lam (t, n, e) ->
+        let Type.V t' = Type.typ t in
+        (match aux e (t :: g) with
+         | Expr (e', Env.(t'' :: g'), tr) ->
+           (match Type.eq t' t'' with
+            | Some Eq.Refl -> Expr (Lam (t', n, e'), g', Type.Arrow (t', tr))
+            | None ->
+              Log.err (fun l -> l "Abs");
+              error e g [ TypMismatch { a = Type.V t'; b = Type.V t'' } ])
+         | Expr (_, g'', _) ->
+           Log.err (fun l -> l "Abs");
+           error e g [ EnvMismatch { g = Env.V (t' :: g''); g' = Env.V g'' } ])
+      | App (fu, a) ->
+        (match aux fu g, aux a g with
+         | Expr (f', g', (Type.Arrow (t', u'))),
+           Expr (a', g'', t'') ->
+           (match Env.eq g' g'', Type.eq t' t'' with
+            | Some Eq.Refl, Some Eq.Refl ->
+              Expr (App (f', a'), g', u')
+            | _, _ ->
+              Log.err (fun l -> l "App");
+              error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' }
+                        ; TypMismatch { a = Type.V t'; b = Type.V t'' } ])
+         | wexp, _ ->
+           Log.err (fun l -> l "App");
+           error e g [ ExpectedLambda wexp ])
+      | Bin (#Parsetree.arithmetic as binop, l, r) ->
+        let binop = match binop with
+          | `Add -> Add
+          | `Sub -> Sub
+          | `Mul -> Mul
+          | `Div -> Div
+        in
+        (match aux l g, aux r g with
+         | Expr (l', g', Type.Int),
+           Expr (r', g'', Type.Int) ->
+           (match Env.eq g' g'' with
+            | Some Eq.Refl -> Expr (Bin (binop, l', r'), g', Int)
+            | None ->
+              Log.err (fun l -> l "Bin");
+              error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+         | Expr (_, _, ta), Expr (_, _, tb) ->
+           Log.err (fun l -> l "Bin");
+           error e g [ TypMismatch { a = Type.V Int; b = Type.V ta }
+                     ; TypMismatch { a = Type.V Int; b = Type.V tb } ])
+      | Let (t, n, a, b) ->
+        let Type.V t' = Type.typ t in
+        (match aux a g, aux b (t :: g) with
+         | Expr (a', g'', t''), Expr (f', g''', r') ->
+           (match Type.eq t' t'' , Env.eq g' g'', Env.eq (t'' :: g'') g''' with
+            | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
+              Expr (Let (t', n, a', f'), g', r')
+            | _, _, _ ->
+              Log.err (fun l -> l "Let");
+              error e g [ TypMismatch { a = Type.V t'; b = Type.V t'' }
+                        ; EnvMismatch { g = Env.V g'; g' = Env.V g'' }
+                        ; EnvMismatch { g = Env.V (t'' :: g''); g' = Env.V g''' } ]))
+      | If (t, a, b) ->
+        (match aux t g, aux a g, aux b g with
+         | Expr (t', g', Type.Bool),
+           Expr (a', g'', u'),
+           Expr (b', g''', v') ->
+           (match Type.eq u' v', Env.eq g' g'', Env.eq g'' g''' with
+            | Some Eq.Refl, Some (Eq.Refl as ae), Some (Eq.Refl as be) ->
+              (match Eq.trans ae be with Eq.Refl -> Expr (If (t', a', b'), g', u'))
+            | _, _, _ ->
+              Log.err (fun l -> l "If");
+              error e g [ TypMismatch { a = Type.V u'; b = Type.V v' }
+                        ; EnvMismatch { g = Env.V g'; g' = Env.V g'' }
+                        ; EnvMismatch { g = Env.V g''; g' = Env.V g''' } ])
+         | Expr (_, _, t'), _, _ ->
+           Log.err (fun l -> l "If");
+           error e g [ TypMismatch { a = Type.V Bool; b = Type.V t' } ])
+      | Bin (`Eq, a, b) ->
+        let Expr (a', g', ta') = aux a g in
+        let Expr (b', g'', tb') = aux b g in
+        (match Type.eq ta' tb', Env.eq g' g'' with
+         | Some Eq.Refl, Some Eq.Refl -> Expr (Bin (Eq, a', b'), g', Bool)
+         | _, _ -> assert false)
+      | Swt { a; b; s; } ->
+        (match aux s g with
+         | Expr (s', g'', Type.Either (l', r')) ->
+           let l = Type.untype l' in
+           let r = Type.untype r' in
+           (match aux a (l :: g), aux b (r :: g) with
+            | Expr (a', Env.(l'' :: ag''), ar),
+              Expr (b', Env.(r'' :: bg''), br) ->
+              (match Type.eq l' l'', Type.eq r' r'',
+                     Env.eq ag'' g'', Env.eq bg'' g'',
+                     Type.eq ar br with
+              | Some Eq.Refl, Some Eq.Refl,
+                Some Eq.Refl, Some Eq.Refl,
+                Some Eq.Refl ->
+                Expr (Swt { s = s'; a = a'; b = b'; }, g'', ar)
+              | _, _, _, _, _ ->
+                Log.err (fun l -> l "Swt");
+                error e g [ TypMismatch { a = Type.V l'; b = Type.V l'' }
+                          ; TypMismatch { a = Type.V r'; b = Type.V r'' }
+                          ; EnvMismatch { g = Env.V ag''; g' = Env.V g'' }
+                          ; EnvMismatch { g = Env.V bg''; g' = Env.V g'' }
+                          ; TypMismatch { a = Type.V ar; b = Type.V br } ])
+            | Expr (_, ag'', _),
+              Expr (_, bg'', _) ->
+              Log.err (fun l -> l "Swt");
+              error e g [ EnvMismatch { g = Env.V ag''; g' = Env.V (l' :: ag'') }
+                        ; EnvMismatch { g = Env.V bg''; g' = Env.V (r' :: bg'') } ])
+         | wexpr ->
+           Log.err (fun l -> l "Swt");
+           error e g [ ExpectedEither wexpr ])
+      | Rec {r=rtyp; p=(n, ptyp); e }  ->
+        let Type.V r = Type.typ rtyp in
+        let Type.V p = Type.typ ptyp in
+        let te = Type.Either (p, r) in
+        let tb = Type.Arrow (p, r) in
+        (match aux e (ptyp :: g) with
+         | Expr (e', Env.(te' :: g''), tr) ->
+           (match Type.eq tr te, Type.eq te' p, Env.eq g' g'' with
+            | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
+              Expr (fix (n, p) r e', g', tb)
+            | Some Eq.Refl, None, _ ->
+              error e g [ TypMismatch { a = Type.V te'; b = Type.V p }]
+            | None, Some Eq.Refl, _ ->
+              error e g [ TypMismatch { a = Type.V tr; b = Type.V te }]
+            | Some Eq.Refl, Some Eq.Refl, None ->
+              error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ]
+            | None, None, _ ->
+              error e g [ TypMismatch { a = Type.V te'; b = Type.V p };
+                          TypMismatch { a = Type.V tr; b = Type.V te }])
+         | Expr (_, g', _) ->
+           error e g [ EnvMismatch { g = Env.(V (p :: g')); g' = Env.V g' }])
+    and typ_list t l g =
+      let Env.V g0 = Env.typ g in
+      let Type.V t = match t, l with
+        | Some t, _  -> Type.typ t
+        | None, h::_ -> let Expr (_, _, t) = aux h g in Type.V t
+        | _ -> failwith "cannot type the empty list"
+      in
+      let tl = Type.list t in
+      let rec aux_l = function
+        | []   -> Expr (list t [], g0, tl)
+        | a::b ->
+          match aux a g, aux_l b with
+          | Expr (Val e1, g1 , t1), Expr (Val e2, g2, t2) ->
+            (match Type.eq t t1, Type.eq tl t2, Env.eq g0 g1, Env.eq g0 g2 with
+             | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
+               Expr (list t (e1.v :: e2.v), g0, tl)
+             | a, b, c, d ->
+               let pp ppf = function
+                 | None   -> Fmt.string ppf "None"
+                 | Some _ -> Fmt.string ppf "Some"
+               in
+               Fmt.failwith "invalid list elt (%a, %a, %a, %a)"
+                 pp a pp b pp c pp d)
+          | x, _ ->
+            (* XXX(dinosaure): we don't need to check [b], [aux_l] returns in any
+               case a value or raise an error. *)
+            error e g [ ExpectedValue x ]
+      in aux_l l
+    in
+    match aux e [] with
+    | Expr (m, Env.[], t) -> Ok (V (m ,t))
+    | Expr (_, g', _) -> Error (e, [], [EnvMismatch {g=Env.V []; g'=Env.V g'}])
+    | exception Break e -> Error e
+
 end
 
+type expr = Expr.v
 type 'a typ = 'a Type.t
-type expr = E: (unit, 'a) Expr.t * 'a Type.t -> expr
-type v = V: 'a * 'a Type.t -> v
+type value = V: 'a * 'a Type.t -> value
 
-let (--) = (-)
 open Expr
-
-type a_expr = Expr: ('e, 'a) t * 'e Env.t * 'a Type.t -> a_expr
-type a_prim = Prim: ('a, 'b) prim * 'b Env.t * 'a Type.t -> a_prim
-
-type kind =
-  | EnvMismatch of { g  : Env.v
-                   ; g' : Env.v }
-  | TypMismatch of { a  : Type.v
-                   ; b  : Type.v }
-  | ExpectedPair of a_expr
-  | ExpectedLambda of a_expr
-  | ExpectedEither of a_expr
-  | ExpectedValue of a_expr
-
-type error = Parsetree.expr * Parsetree.typ list * kind list
-
-exception Break of error
-
-let error expr ts es = raise (Break (expr, ts, es))
-
-let pp_typ ppf (Type.V t) = Type.pp ppf t
-
-let pp_kind ppf = function
-  | EnvMismatch _      -> Fmt.pf ppf "env mismatch"
-  | TypMismatch {a; b} ->
-    Fmt.pf ppf "%a is not compatible with %a" pp_typ a pp_typ b
-  | ExpectedPair _     -> Fmt.pf ppf "a pair was expected"
-  | ExpectedLambda _   -> Fmt.pf ppf "a lambda was expected"
-  | ExpectedEither _   -> Fmt.pf ppf "either was expected"
-  | ExpectedValue _    -> Fmt.pf ppf "a value was expected"
-
-let pp_error ppf (e, ts, ks) =
-  Fmt.pf ppf "error while evaluating:@ %a@ %a@ %a"
-    Parsetree.pp e
-    Fmt.(Dump.list Parsetree.Type.pp) ts
-    Fmt.(Dump.list pp_kind) ks
-
-let uncurry args =
-  List.fold_right (fun t -> function
-      | Expr (a, Env.(ta :: e), tr) ->
-        let Type.V t' = Type.typ t in
-        (match Type.eq ta t' with
-         | Some Eq.Refl ->
-           Expr (Lam (t', a), e, Arrow (t', tr))
-         | None ->
-           Fmt.invalid_arg "Type mismatch: %a <> %a." Type.pp ta Type.pp t')
-      | Expr _ -> invalid_arg "Impossible to uncurry, environment mismatch")
-    args
-
-let env_to_list g e =
-  let rec aux:
-    type e. Parsetree.value list -> e Env.t -> e -> Parsetree.value list
-    = fun a g e -> match g, e with
-      | Env.(t :: tr), (vr, v) ->
-        let c = Value.untype t v in
-        aux (c :: a) tr vr
-      | Env.([]), () -> a
-  in
-  aux [] g e
-
-let cast_primitive ~name g args rettype untype_primitive =
-  let rec chop n l = match n, l with
-    | 0, l -> l
-    | n, _ :: r -> chop (n -- 1) r
-    | _, _ -> assert false in
-  let miss = List.length g in
-  let Env.V g' = Env.typ List.(rev_append args g) in
-  Prim ({ name
-        ; env = g'
-        ; typ = rettype
-        ; exp = (fun ~env ->
-              let ua = env_to_list g' env in
-              let uc = untype_primitive (chop miss ua) in
-              Value.cast uc rettype
-            ) },
-        g', rettype)
-
-let typ e =
-  let rec aux: Parsetree.expr -> Parsetree.typ list -> a_expr = fun e g ->
-    match e with
-    | Val v ->
-      let Env.V e = Env.typ g in
-      let Parsetree.V v = v in
-      Expr (Con v.v, e, v.t)
-    | Lst (t, l) -> typ_list t l g
-    | Arr (t, a) ->
-      (match typ_list t (Array.to_list a) g with
-       | Expr (Con e, g, Type.List t) ->
-         Expr (Con (Array.of_list e), g, Type.array t)
-       | _ -> assert false)
-    | Prm { name; typ = (args, ret); exp; } ->
-      let Type.V rettype = Type.typ ret in
-      let Prim (x, y, z) = cast_primitive ~name g args rettype exp in
-      uncurry args (Expr (Prm x, y, z))
-    | Uno (L tr, x) ->
-      let Env.V g' = Env.typ g in
-      let Type.V tr' = Type.typ tr in
-      let Expr (x', g'', tx') = aux x g in
-      (match Env.eq g' g'' with
-       | Some Eq.Refl -> Expr (Uno (L, x'), g', Either (tx', tr'))
-       | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
-    | Uno (Ok tr, x) ->
-      let Env.V g' = Env.typ g in
-      let Type.V tr' = Type.typ tr in
-      let Expr (x', g'', tx') = aux x g in
-      (match Env.eq g' g'' with
-       | Some Eq.Refl -> Expr (Uno (Oky, x'), g', Result (tx', tr'))
-       | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
-    | Uno (R tl, x) ->
-      let Env.V g' = Env.typ g in
-      let Type.V tl' = Type.typ tl in
-      let Expr (x', g'', tx') = aux x g in
-      (match Env.eq g' g'' with
-       | Some Eq.Refl -> Expr (Uno (R, x'), g', Either (tl', tx'))
-       | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
-    | Uno (Error tl, x) ->
-      let Env.V g' = Env.typ g in
-      let Type.V tl' = Type.typ tl in
-      let Expr (x', g'', tx') = aux x g in
-      (match Env.eq g' g'' with
-       | Some Eq.Refl -> Expr (Uno (Err, x'), g', Result (tl', tx'))
-       | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
-    | Uno (Fst, x) ->
-      let Env.V g' = Env.typ g in
-      (match aux x g with
-       | Expr (x', g'', Type.Pair (ta', _)) ->
-         (match Env.eq g' g'' with
-          | Some Eq.Refl -> Expr (Uno (Fst, x'), g', ta')
-          | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
-       | wexpr -> error e g [ ExpectedPair wexpr ])
-    | Uno (Snd, x) ->
-      let Env.V g' = Env.typ g in
-      (match aux x g with
-       | Expr (x', g'', Type.Pair (_, tb')) ->
-         (match Env.eq g' g'' with
-          | Some Eq.Refl -> Expr (Uno (Snd, x'), g', tb')
-          | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
-       | wexpr -> error e g [ ExpectedPair wexpr ])
-    | Opt (tr, None) ->
-      let Env.V g' = Env.typ g in
-      let tr = match tr with Some t -> t | None -> failwith "cannot type None" in
-      let Type.V tr' = Type.typ tr in
-      Expr (Opt (tr', None), g', Option tr')
-    | Opt (tr, Some x) ->
-      let Env.V g' = Env.typ g in
-      let Expr (x', g'', tr') = aux x g in
-      (match tr with
-       | None   -> ()
-       | Some t ->
-         let Type.V t = Type.typ t in
-         match Type.eq t tr' with
-         | Some Eq.Refl -> ()
-         | _ -> failwith "wrong constraint for option type");
-      (match Env.eq g' g'' with
-       | Some Eq.Refl -> Expr (Opt (tr', Some x'), g', Option tr')
-       | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
-    | Bin (`Pair, a, b) ->
-      let Env.V g' = Env.typ g in
-      let Expr (a', g'', ta') = aux a g in
-      let Expr (b', g''', tb') = aux b g in
-      (match Env.eq g' g'', Env.eq g'' g''' with
-       | Some (Eq.Refl as g1), Some (Eq.Refl as g2) ->
-         (match Eq.trans g1 g2 with
-          | Eq.Refl -> Expr (Bin (Pair, a', b'), g', Pair (ta', tb')))
-       | _, _ ->
-         Log.err (fun l -> l "Bin `Pair");
-         error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' }
-                   ; EnvMismatch { g = Env.V g''; g' = Env.V g''' } ])
-    | Var x ->
-      let Var.V (x', g', t') = Var.typ x g in
-      Expr (Var x', g', t')
-    | Lam (t, _, e) ->
-      let Type.V t' = Type.typ t in
-      (match aux e (t :: g) with
-       | Expr (e', Env.(t'' :: g'), tr) ->
-         (match Type.eq t' t'' with
-          | Some Eq.Refl -> Expr (Lam (t', e'), g', Type.Arrow (t', tr))
-          | None ->
-            Log.err (fun l -> l "Abs");
-            error e g [ TypMismatch { a = Type.V t'; b = Type.V t'' } ])
-       | Expr (_, g'', _) ->
-         Log.err (fun l -> l "Abs");
-         error e g [ EnvMismatch { g = Env.V (t' :: g''); g' = Env.V g'' } ])
-    | App (fu, a) ->
-      (match aux fu g, aux a g with
-       | Expr (f', g', (Type.Arrow (t', u'))),
-         Expr (a', g'', t'') ->
-         (match Env.eq g' g'', Type.eq t' t'' with
-          | Some Eq.Refl, Some Eq.Refl ->
-            Expr (App (f', a'), g', u')
-          | _, _ ->
-            Log.err (fun l -> l "App");
-            error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' }
-                      ; TypMismatch { a = Type.V t'; b = Type.V t'' } ])
-       | wexp, _ ->
-         Log.err (fun l -> l "App");
-         error e g [ ExpectedLambda wexp ])
-    | Bin (#Parsetree.arithmetic as binop, l, r) ->
-      let binop = match binop with
-        | `Add -> Add
-        | `Sub -> Sub
-        | `Mul -> Mul
-        | `Div -> Div
-      in
-      (match aux l g, aux r g with
-       | Expr (l', g', Type.Int),
-         Expr (r', g'', Type.Int) ->
-         (match Env.eq g' g'' with
-          | Some Eq.Refl -> Expr (Bin (binop, l', r'), g', Int)
-          | None ->
-            Log.err (fun l -> l "Bin");
-            error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
-       | Expr (_, _, ta), Expr (_, _, tb) ->
-         Log.err (fun l -> l "Bin");
-         error e g [ TypMismatch { a = Type.V Int; b = Type.V ta }
-                   ; TypMismatch { a = Type.V Int; b = Type.V tb } ])
-    | Let (t, _, a, b) ->
-      let Env.V g' = Env.typ g in
-      let Type.V t' = Type.typ t in
-      (match aux a g, aux b (t :: g) with
-       | Expr (a', g'', t''), Expr (f', g''', r') ->
-         (match Type.eq t' t'' , Env.eq g' g'', Env.eq (t'' :: g'') g''' with
-          | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
-            Expr (Let (t', a', f'), g', r')
-          | _, _, _ ->
-            Log.err (fun l -> l "Let");
-            error e g [ TypMismatch { a = Type.V t'; b = Type.V t'' }
-                      ; EnvMismatch { g = Env.V g'; g' = Env.V g'' }
-                      ; EnvMismatch { g = Env.V (t'' :: g''); g' = Env.V g''' } ]))
-    | If (t, a, b) ->
-      (match aux t g, aux a g, aux b g with
-       | Expr (t', g', Type.Bool),
-         Expr (a', g'', u'),
-         Expr (b', g''', v') ->
-         (match Type.eq u' v', Env.eq g' g'', Env.eq g'' g''' with
-          | Some Eq.Refl, Some (Eq.Refl as ae), Some (Eq.Refl as be) ->
-            (match Eq.trans ae be with Eq.Refl -> Expr (If (t', a', b'), g', u'))
-          | _, _, _ ->
-            Log.err (fun l -> l "If");
-            error e g [ TypMismatch { a = Type.V u'; b = Type.V v' }
-                      ; EnvMismatch { g = Env.V g'; g' = Env.V g'' }
-                      ; EnvMismatch { g = Env.V g''; g' = Env.V g''' } ])
-       | Expr (_, _, t'), _, _ ->
-         Log.err (fun l -> l "If");
-         error e g [ TypMismatch { a = Type.V Bool; b = Type.V t' } ])
-    | Bin (`Eq, a, b) ->
-      let Expr (a', g', ta') = aux a g in
-      let Expr (b', g'', tb') = aux b g in
-      (match Type.eq ta' tb', Env.eq g' g'' with
-       | Some Eq.Refl, Some Eq.Refl -> Expr (Bin (Eq, a', b'), g', Bool)
-       | _, _ -> assert false)
-    | Swt { a; b; s; } ->
-      (match aux s g with
-       | Expr (s', g'', Type.Either (l', r')) ->
-         let l = Type.untype l' in
-         let r = Type.untype r' in
-         (match aux a (l :: g), aux b (r :: g) with
-          | Expr (a', Env.(l'' :: ag''), ar),
-            Expr (b', Env.(r'' :: bg''), br) ->
-            (match Type.eq l' l'', Type.eq r' r'',
-                   Env.eq ag'' g'', Env.eq bg'' g'',
-                   Type.eq ar br with
-            | Some Eq.Refl, Some Eq.Refl,
-              Some Eq.Refl, Some Eq.Refl,
-              Some Eq.Refl ->
-              Expr (Swt { s = s'; a = a'; b = b'; }, g'', ar)
-            | _, _, _, _, _ ->
-              Log.err (fun l -> l "Swt");
-              error e g [ TypMismatch { a = Type.V l'; b = Type.V l'' }
-                        ; TypMismatch { a = Type.V r'; b = Type.V r'' }
-                        ; EnvMismatch { g = Env.V ag''; g' = Env.V g'' }
-                        ; EnvMismatch { g = Env.V bg''; g' = Env.V g'' }
-                        ; TypMismatch { a = Type.V ar; b = Type.V br } ])
-          | Expr (_, ag'', _),
-            Expr (_, bg'', _) ->
-            Log.err (fun l -> l "Swt");
-            error e g [ EnvMismatch { g = Env.V ag''; g' = Env.V (l' :: ag'') }
-                      ; EnvMismatch { g = Env.V bg''; g' = Env.V (r' :: bg'') } ])
-       | wexpr ->
-         Log.err (fun l -> l "Swt");
-         error e g [ ExpectedEither wexpr ])
-    | Rec {r=rtyp; p=(_, ptyp); e }  ->
-      let Env.V g0 = Env.typ g in
-      let Type.V r = Type.typ rtyp in
-      let Type.V p = Type.typ ptyp in
-      let te = Type.Either (p, r) in
-      let tb = Type.Arrow (p, r) in
-      (match aux e (ptyp :: g) with
-       | Expr (e', Env.(te' :: g'), tr) ->
-         (match Type.eq tr te, Type.eq te' p, Env.eq g0 g' with
-          | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
-            Expr (Rec (p, r, e'), g0, tb)
-          | Some Eq.Refl, None, _ ->
-            error e g [ TypMismatch { a = Type.V te'; b = Type.V p }]
-          | None, Some Eq.Refl, _ ->
-            error e g [ TypMismatch { a = Type.V tr; b = Type.V te }]
-          | Some Eq.Refl, Some Eq.Refl, None ->
-            error e g [ EnvMismatch { g = Env.V g0; g' = Env.V g0 } ]
-          | None, None, _ ->
-            error e g [ TypMismatch { a = Type.V te'; b = Type.V p };
-                        TypMismatch { a = Type.V tr; b = Type.V te }])
-       | Expr (_, g', _) ->
-         error e g [ EnvMismatch { g = Env.(V (p :: g0)); g' = Env.V g' }])
-  and typ_list t l g =
-    let Env.V g0 = Env.typ g in
-    let Type.V t = match t, l with
-      | Some t, _  -> Type.typ t
-      | None, h::_ -> let Expr (_, _, t) = aux h g in Type.V t
-      | _ -> failwith "cannot type the empty list"
-    in
-    let tl = Type.list t in
-    let rec aux_l l = match l with
-      | []   -> Expr (Con [], g0, tl)
-      | a::b ->
-        match aux a g, aux_l b with
-        | Expr (Con e1, g1 , t1), Expr (Con e2, g2, t2) ->
-          (match Type.eq t t1, Type.eq tl t2, Env.eq g0 g1, Env.eq g0 g2 with
-           | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
-             Expr (Con (e1 :: e2), g0, tl)
-           | a, b, c, d ->
-             let pp ppf = function
-               | None   -> Fmt.string ppf "None"
-               | Some _ -> Fmt.string ppf "Some"
-             in
-             Fmt.failwith "invalid list elt (%a, %a, %a, %a)"
-               pp a pp b pp c pp d)
-        | x, _ ->
-          (* XXX(dinosaure): we don't need to check [b], [aux_l] returns in any
-             case a value or raise an error. *)
-          error e g [ ExpectedValue x ]
-    in aux_l l
-  in
-  match aux e [] with
-  | Expr (m, Env.[], t) -> Ok (E (m ,t))
-  | Expr (_, g', _) -> Error (e, [], [EnvMismatch {g=Env.V []; g'=Env.V g'}])
-  | exception Break e -> Error e
-
 
 let err_type_mismatch m t t': (_, error) result =
   Error (m, [], [ TypMismatch { a = Type.V t; b = Type.V t' } ])

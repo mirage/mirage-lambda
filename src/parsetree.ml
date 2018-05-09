@@ -114,7 +114,8 @@ type arithmetic = [ `Add | `Sub | `Mul | `Div ]
 
 type primitive =
   { name : string
-  ; typ  : typ list * typ
+  ; args : typ list
+  ; ret  : typ
   ; exp  : value list -> value }
 and binop =
   [ arithmetic | `Pair | `Eq ]
@@ -158,7 +159,7 @@ let pp ppf t =
     let pp = aux ctx in
     match t with
     | Var n -> Fmt.pf ppf "%s$%d" (nth ctx n) n.id
-    | Val c  -> pp_value ppf c
+    | Val c -> pp_value ppf c
     | Lst (t, [])     -> Fmt.pf ppf "([]: %a list)" pp_typ_opt t
     | Lst (_, l)      -> Fmt.Dump.list pp ppf l
     | Arr (t, [||])   -> Fmt.pf ppf "([||]: %a array)" pp_typ_opt t
@@ -215,6 +216,7 @@ let pp ppf t =
   aux [] ppf t
 
 let value v t pp = Val (V {v; t; pp})
+let prim p = Prm p
 
 let unit = value () Unit (fun ppf () -> Fmt.pf ppf "()")
 let int n = value n Int Fmt.int
@@ -259,7 +261,7 @@ let let_rec t n ((_, i) as a) e body =
   let ty = Type.Arrow (i, t) in
   Let (ty, n, fix a t e, body)
 
-let primitive name inputs output exp = Prm {name; typ = (inputs, output); exp}
+let primitive name args ret exp = Prm {name; args; ret; exp}
 
 let equal_param (a, b) (c, d) = String.equal a c && Type.equal b d
 
@@ -270,7 +272,7 @@ let equal a b =
       (match T.eq a.t b.t with
        | Some Eq.Refl -> k (a.v = b.v)
        | None          -> k false)
-    | Prm a, Prm b -> k (a.name = b.name && a.typ = b.typ)
+    | Prm a, Prm b -> k (a.name = b.name && a.args = b.args && a.ret = b.ret)
     | Lst (_, a), Lst (_, b) ->
       List.length a = List.length b && List.for_all2 (aux k) a b
     | Arr (_, a), Arr (_, b) ->
@@ -306,9 +308,10 @@ let equal a b =
       aux (fun x -> aux (fun y ->
           aux (fun z -> k @@ x && y && z) a d
         ) b e) c f
+    | Lst _, x -> Fmt.epr "XXX2 %a\n%!" pp x; false
     | Var _, _ | Val _, _ | Prm _, _ | Lam _, _ | App _, _
     | Bin _, _ | Uno _, _ | Let _, _ | Swt _, _ | Rec _, _
-    | If _, _ | Lst _, _ | Arr _, _ | Opt _, _ -> false
+    | If _, _ | Arr _, _ | Opt _, _ -> false
   in
   aux (fun x -> x) a b
 
@@ -316,3 +319,4 @@ let ( = ) a b = Bin (`Eq, a, b)
 let ( + ) a b = Bin (`Add, a, b)
 let ( * ) a b = Bin (`Mul, a, b)
 let ( - ) a b = Bin (`Sub, a, b)
+let ( / ) a b = Bin (`Div, a, b)

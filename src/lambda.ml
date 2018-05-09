@@ -48,20 +48,22 @@ module Type = Typedtree.Type
 module Var = Typedtree.Var
 module Expr = Typedtree.Expr
 
-let typ = Typedtree.typ
+let typ = Expr.typ
+
+let untype (Expr.V (e, _)) = Expr.untype e
 
 type 'a typ = 'a Type.t
 type expr = Typedtree.expr
-type value = Typedtree.v
+type value = Typedtree.value
 
-type error = Typedtree.error
-let pp_error = Typedtree.pp_error
+type error = Expr.error
+let pp_error = Expr.pp_error
 
 let ( $ ) f x = match f with Ok f -> Ok (f x) | Error e -> Error e
 
 let eval e =
   let open Expr in
-  let Typedtree.E (m, t) = e in
+  let Typedtree.Expr.V (m, t) = e in
   Typedtree.V (eval m (), t)
 
 let cast: type a. value -> a typ -> a option = fun v t' ->
@@ -72,13 +74,19 @@ let cast: type a. value -> a typ -> a option = fun v t' ->
 
 let type_and_eval:
   type a. Parsetree.expr -> a typ -> (a, error) result = fun m t' ->
-  match Typedtree.typ m with
+  match Typedtree.Expr.typ m with
   | Error _ as e -> e
   | Ok e         ->
     let Typedtree.V (v, t) = eval e in
     match Type.eq t t' with
     | Some Eq.Refl -> Ok v
     | None   -> Typedtree.err_type_mismatch m t t'
+
+(*
+let untype: expr -> Parsetree.expr = fun e ->
+  let Typedtree.E (m, t) = e in
+  Typed
+*)
 
 type primitive = string * Parsetree.expr
 
@@ -104,7 +112,7 @@ module L = struct
     : type a. Parsetree.expr -> (a, Type.lwt) Type.app typ ->
       (a Lwt.t, error) result
     = fun m t' ->
-    match Typedtree.typ m with
+    match Typedtree.Expr.typ m with
     | Error _ as e -> e
     | Ok e         ->
       let Typedtree.V (v, t) = eval e in

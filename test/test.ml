@@ -100,16 +100,23 @@ let test_fact () =
   let safe =
     let open Expr in
     let main =
-      let_rec Type.(int ** int) Type.int (fun ~context ~return ~continue ->
+      let_rec Type.("x", int ** int) Type.int (fun ~context ~return ~continue ->
           let acc = fst context in
           let n = snd context in
           (if_ (n = int 0)
              (return acc)
              (continue (pair (acc * n) (n - int 1))))
         ) in
-    lambda Type.int (main $ (pair (int 1) (var Var.o)))
+    lambda ("x", Type.int) (main $ (pair (int 1) (var Var.o)))
   in
   Alcotest.(check @@ int) "safe" 120 (Expr.eval safe () 5);
+  (* check untyping -> pretty-printing -> parsing -> typing *)
+  let u  = Lambda.Expr.untype safe in
+  let _ = typ_exn u in
+  let s  = Fmt.to_to_string Lambda.Parsetree.pp u in
+  let u' = parse_exn s in
+  let _  = typ_exn u' in
+  Alcotest.(check pexpr) "full" u u';
 
   let unsafe =
     let open Parsetree in
@@ -180,10 +187,16 @@ let test_parse_expr () =
   let check s (a, t) r =
     let e = parse_exn s in
     Alcotest.(check @@ ok a) ("parse: " ^ s) (Ok r) (type_and_eval e t);
+    let te = typ_exn e in
+    let ete = untype te in
+    Alcotest.(check pexpr) "parse untyped" e ete;
     let s' = Fmt.to_to_string Parsetree.pp e in
     Logs.debug (fun l -> l "roundtrip: %s => %s" s s');
     let e' = parse_exn s' in
-    Alcotest.(check @@ pexpr) ("roundtrip: " ^ s') e e'
+    Alcotest.(check @@ pexpr) ("roundtrip: " ^ s') e e';
+    let te' = typ_exn e' in
+    let ete' = untype te' in
+    Alcotest.(check pexpr) "parse untyped (2)" e' ete'
   in
   let int = (Alcotest.int, Type.int) in
   let bool = (Alcotest.bool, Type.bool) in

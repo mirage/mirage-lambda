@@ -54,7 +54,7 @@ val parse:
   string -> (Parsetree.expr, [`Msg of string]) result
 (** [parse ?file ?primitives input] tries to parse [input] and binds primitives
    with their associated names (see {!primitive}) in resulted {!Parsetree.expr}
-   expression. [?file] helps to produce a batter error message. *)
+   expression. [?file] helps to produce a better error message. *)
 
 val typ: Parsetree.expr -> (expr, error) result
 (** [typ unsafe_expr] tries to type [unsafe_expr]. *)

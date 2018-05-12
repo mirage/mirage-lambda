@@ -63,6 +63,7 @@ module Type: sig
   (** {2 Pretty-printer.} *)
 
   val pp_val: 'a t -> 'a Fmt.t
+  val cmp_val: 'a t -> 'a Parsetree.cmp
 
   (** {2 Witness type value.} *)
 
@@ -70,6 +71,9 @@ module Type: sig
 
   val typ: Parsetree.typ -> v
   (** [typ ut] returns a witness of type [ut]. *)
+
+  val cmp: 'a t Parsetree.cmp
+  val pp: 'a t Fmt.t
 end
 
 module Value: sig

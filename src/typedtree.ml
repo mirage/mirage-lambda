@@ -736,7 +736,7 @@ module Expr = struct
            let Type.V t = Type.typ t in
            match Type.equal t tr' with
            | Some Eq.Refl -> ()
-           | _ -> failwith "wrong constraint for option type");
+           | _ -> error e g [ TypMismatch {a=Type.V t; b=Type.V tr'} ]);
         (match Env.eq g' g'' with
          | Some Eq.Refl -> Expr (Opt (tr', Some x'), g', Option tr')
          | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
@@ -834,7 +834,8 @@ module Expr = struct
         let Expr (b', g'', tb') = aux b g in
         (match Type.equal ta' tb', Env.eq g' g'' with
          | Some Eq.Refl, Some Eq.Refl -> Expr (Bin (Eq, a', b'), g', Bool)
-         | _, _ -> assert false)
+         | _, _ -> error e g [ TypMismatch {a=Type.V ta'; b=Type.V tb'}
+                             ; EnvMismatch {g=Env.V g'; g'=Env.V g''} ])
       | Swt { a; b; s; } ->
         (match aux s g with
          | Expr (s', g'', Type.Either (l', r')) ->

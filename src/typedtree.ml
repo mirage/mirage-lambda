@@ -397,6 +397,9 @@ module Expr = struct
     | Oky ty -> Fmt.pf ppf "Ok:%a" Type.pp ty
     | Err ty -> Fmt.pf ppf "Error:%a" Type.pp ty
 
+  type ('u, 'v) nnop =
+    | Arr: 'a Type.t -> ('a, 'a array) nnop
+
   type 'a value = {
     t  : 'a Type.t;
     v  : 'a;
@@ -416,6 +419,7 @@ module Expr = struct
     | Uno : ('a, 'res) unop * ('e, 'a) t -> ('e, 'res) t
     | Opt : 'a Type.t * ('e, 'a) t option -> ('e, 'a option) t
     | Bin : ('a, 'b, 'res) binop * ('e, 'a) t * ('e, 'b) t -> ('e, 'res) t
+    | Nar : ('a, 'res) nnop * ('e, 'a) t list -> ('e, 'res) t
     | Var : ('e, 'a) Var.t -> ('e, 'a) t
     | Lam : 'a Type.t * string * ('e * 'a, 'b) t -> ('e, 'a -> 'b) t
     | Rec : ('e, 'p, 'r) rec_ -> ('e, 'p -> 'r) t
@@ -435,6 +439,8 @@ module Expr = struct
       Fmt.pf ppf "@[<1>(@[%a@]@ @[%a@])@]" pp_unop o pp e
     | Bin (o, a, b) ->
       Type.pp_infix ~infix:(binop_to_string o) pp pp ppf (a, b)
+    | Nar (Arr _, lst) ->
+      Fmt.(Dump.array pp) ppf (Array.of_list lst)
     | Opt (ty, Some expr) ->
       Fmt.pf ppf "@[<1>(@[Some:%a option@]@ @[%a@])@]"
         Type.pp ty pp expr
@@ -477,6 +483,7 @@ module Expr = struct
     | Uno (Err _, x) -> Error (eval x e)
     | Uno (Fst, x) -> fst (eval x e)
     | Uno (Snd, x) -> snd (eval x e)
+    | Nar (Arr _, lst) -> List.map (fun x -> eval x e) lst |> Array.of_list
     | Opt (_, Some x) -> Some (eval x e)
     | Opt (_, None)   -> None
     | Var x -> get x e
@@ -559,6 +566,8 @@ module Expr = struct
     | Uno (R l, x)     -> P.right (Type.untype l) (untype x)
     | Uno (Oky e, x)   -> P.ok (Type.untype e) (untype x)
     | Uno (Err o, x)   -> P.error (Type.untype o) (untype x)
+    | Nar (Arr t, [])  -> P.array ~typ:(Type.untype t) [||]
+    | Nar (Arr _, l)   -> P.array (List.map untype l |> Array.of_list)
     | Opt (t, None)    -> P.none (Type.untype t)
     | Opt (_, Some x)  -> P.some (untype x)
     | Bin (Add, x, y)  -> P.(untype x + untype y)
@@ -647,10 +656,29 @@ module Expr = struct
       | Val (Parsetree.V {v;t;pp;cmp}) -> Expr (Val {v;t;pp;cmp}, g', t)
       | Lst (t, l) -> typ_list t l g
       | Arr (t, a) ->
-        (match typ_list t (Array.to_list a) g with
-         | Expr (Val v, g, Type.List t) ->
-           Expr (array t (Array.of_list v.v), g, Type.array t)
-         | _ -> assert false)
+        let typ_array t a g =
+          let Env.V g0 = Env.typ g in
+
+          let Type.V t = match t, a with
+            | Some t, _ -> Type.typ t
+            | None, a when Array.length a > 0 ->
+              let Expr (_, _, t) = aux (Array.get a 0) g in Type.V t
+            | _  -> failwith "cannot type empty array" in
+
+          let ta = Type.array t in
+
+          let rec aux_a = function
+            | [] -> Expr (Nar (Arr t, []), g0, ta)
+            | a :: b ->
+              match aux a g, aux_a b with
+              | Expr (e1, g1, t1), Expr (Nar (Arr t, e2), g2, t2) ->
+                (match Type.equal t t1, Type.equal ta t2, Env.eq g0 g1, Env.eq g0 g2 with
+                 | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
+                   Expr (Nar (Arr t, e1 :: e2), g0, ta)
+                 | _, _, _, _ -> assert false)
+              | _, _ -> assert false in
+          aux_a (Array.to_list a) in
+        typ_array t a g
       | Prm p ->
         let Prim.V (x, y, z) = Prim.typ p g in
         uncurry p.args (Expr (Prm x, y, z))

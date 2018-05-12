@@ -609,10 +609,10 @@ module Expr = struct
                      ; g' : Env.v }
     | TypMismatch of { a  : Type.v
                      ; b  : Type.v }
-    | ExpectedPair of a_expr
-    | ExpectedLambda of a_expr
-    | ExpectedEither of a_expr
-    | ExpectedValue of a_expr
+    | ExpectedPair    of a_expr
+    | ExpectedLambda  of a_expr
+    | ExpectedEither  of a_expr
+    | UnboundVariable of int
 
   type error = Parsetree.expr * Parsetree.typ list * kind list
 
@@ -629,7 +629,7 @@ module Expr = struct
     | ExpectedPair _     -> Fmt.pf ppf "a pair was expected"
     | ExpectedLambda _   -> Fmt.pf ppf "a lambda was expected"
     | ExpectedEither _   -> Fmt.pf ppf "either was expected"
-    | ExpectedValue _    -> Fmt.pf ppf "a value was expected"
+    | UnboundVariable n  -> Fmt.pf ppf "unbound variable $%d" n
 
   let pp_error ppf (e, ts, ks) =
     Fmt.pf ppf "error while evaluating:@ %a@ %a@ %a"
@@ -752,8 +752,10 @@ module Expr = struct
            error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' }
                      ; EnvMismatch { g = Env.V g''; g' = Env.V g''' } ])
       | Var x ->
-        let Var.V (x', g'', t') = Var.typ x g in
-        Expr (Var x', g'', t')
+        (try
+           let Var.V (x', g'', t') = Var.typ x g in
+           Expr (Var x', g'', t')
+         with Invalid_argument _ -> error e g [ UnboundVariable 0 ])
       | Lam (t, n, e) ->
         let Type.V t' = Type.typ t in
         (match aux e (t :: g) with

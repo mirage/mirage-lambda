@@ -99,6 +99,7 @@ module Witness : sig
   type 'a t
   val v : unit -> 'a t
   val eq: 'a t -> 'b t -> ('a, 'b) refl option
+  val cmp: 'a t -> 'b t -> int
 end = struct
 
   type _ equality = ..
@@ -124,6 +125,13 @@ end = struct
       | B.Eq -> Some Refl
       | _    -> None
 
+  let cmp: type a b. a t -> b t -> int =
+    fun ((module A) as a) ((module B) as b) -> match eq a b with
+      | Some Refl -> 0
+      | None ->
+        let ext_a = Obj.extension_id (Obj.extension_constructor A.Eq) in
+        let ext_b = Obj.extension_id (Obj.extension_constructor B.Eq) in
+        ext_a - ext_b
 end
 
 type 'a witness = { name: string; wit : 'a Witness.t }

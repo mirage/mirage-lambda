@@ -29,6 +29,10 @@ module Type = struct
     | Some Eq.Refl -> true
     | _ -> false
 
+  let compare_abstract (A a) (A b) =
+    let c = String.compare a.name b.name in
+    if c = 0 then Eq.Witness.cmp a.wit b.wit else c
+
   type t =
     | Unit
     | Int

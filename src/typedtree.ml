@@ -558,7 +558,9 @@ module Expr = struct
   let rec untype: type a e. (e, a) t -> Parsetree.expr = fun e ->
     let module P = Parsetree in
     match e with
-    | Val {v;t;pp}     -> P.value v t pp
+    | Val {t=Type.List t;v=[];_} -> P.list ~typ:(Type.untype t) []
+    | Val {t=Type.Array t;v=[||];_} -> P.array ~typ:(Type.untype t) [||]
+    | Val {v;t;pp;cmp} -> P.value v t pp cmp
     | Prm x            -> P.prim (Prim.untype x)
     | Uno (Fst, x)     -> P.fst (untype x)
     | Uno (Snd, x)     -> P.snd (untype x)

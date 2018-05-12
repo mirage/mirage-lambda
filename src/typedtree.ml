@@ -594,7 +594,11 @@ module Expr = struct
       let p = fst_ re.p, Type.untype (snd_ re.p) in
       let b = untype re.body in
       P.fix p r b
-    | Swt _ -> failwith "TODO"
+    | Swt { s; a; b; } ->
+      let s = untype s in
+      let a = untype a in
+      let b = untype b in
+      P.match_ s a b
 
   type v = V: (unit, 'a) t * 'a Type.t -> v
 

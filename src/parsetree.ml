@@ -235,6 +235,7 @@ let pp ppf t =
   aux [] ppf t
 
 let value v t pp cmp = Val (V {v; t; pp; cmp;})
+let of_value v = Val v
 let prim p = Prm p
 
 let unit = value () Unit (fun ppf () -> Fmt.pf ppf "()") (fun () () -> 0)

@@ -176,6 +176,7 @@ val true_: expr
 val false_: expr
 
 val value: 'a -> 'a T.t -> 'a Fmt.t -> 'a cmp -> expr
+val of_value: value -> expr
 
 val lambda: (string * typ) list -> expr -> expr
 

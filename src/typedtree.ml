@@ -368,6 +368,7 @@ module Expr = struct
     | Div : (int, int, int) binop
     | Pair : ('a, 'b, 'a * 'b) binop
     | Eq  : ('a, 'a, bool) binop
+    | Cons : ('a, 'a list, 'a list) binop
 
   let pp_binop : type l r v. (l, r, v) binop Fmt.t = fun ppf -> function
     | Add  -> Fmt.string ppf "+"
@@ -376,6 +377,7 @@ module Expr = struct
     | Div  -> Fmt.string ppf "/"
     | Eq   -> Fmt.string ppf "="
     | Pair -> Fmt.string ppf ","
+    | Cons -> Fmt.string ppf "::"
 
   let binop_to_string x = Fmt.strf "%a" pp_binop x
 
@@ -486,6 +488,7 @@ module Expr = struct
     | Bin (Div, l, r) -> (eval l e) / (eval r e)
     | Bin (Pair, l, r) -> (eval l e, eval r e)
     | Bin (Eq, l, r) -> (eval l e) = (eval r e)
+    | Bin (Cons, x, r) -> (eval x e) :: (eval r e)
     | Let (_, _, a, f) ->
       eval f (e, (eval a e))
     | Swt { s; a; b; } ->
@@ -564,6 +567,14 @@ module Expr = struct
     | Bin (Div, x, y)  -> P.(untype x / untype y)
     | Bin (Eq , x, y)  -> P.(untype x = untype y)
     | Bin (Pair, x, y) -> P.pair (untype x) (untype y)
+    | Bin (Cons, _, _) ->
+      let rec go
+        : type a e. Parsetree.expr list -> (e, a list) t -> Parsetree.expr list
+        = fun acc -> function
+        | Bin (Cons, x, r) -> go (untype x :: acc) r
+        | Val {v=[];_} -> List.rev acc
+        | expr -> List.rev (untype expr :: acc) in
+      P.list (go [] e)
     | Var x            -> P.var (Var.to_int x)
     | Lam (t, n, e)    -> P.lambda [n, Type.untype t] (untype e)
     | App (a, b)       -> P.apply (untype a) (untype b)
@@ -843,38 +854,33 @@ module Expr = struct
            error e g [ EnvMismatch { g = Env.(V (p :: g')); g' = Env.V g' }])
     and typ_list t l g =
       let Env.V g0 = Env.typ g in
+
       let Type.V t = match t, l with
         | Some t, _  -> Type.typ t
         | None, h::_ -> let Expr (_, _, t) = aux h g in Type.V t
-        | _ -> failwith "cannot type the empty list"
-      in
+        | _          -> failwith "cannot type the empty list" in
+
       let tl = Type.list t in
+
       let rec aux_l = function
         | []   -> Expr (list t [], g0, tl)
         | a::b ->
           match aux a g, aux_l b with
-          | Expr (Val e1, g1 , t1), Expr (Val e2, g2, t2) ->
+          | Expr (e1, g1 , t1), Expr (e2, g2, t2) ->
             (match Type.equal t t1, Type.equal tl t2, Env.eq g0 g1, Env.eq g0 g2 with
              | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
-               Expr (list t (e1.v :: e2.v), g0, tl)
-             | a, b, c, d ->
-               let pp ppf = function
-                 | None   -> Fmt.string ppf "None"
-                 | Some _ -> Fmt.string ppf "Some"
-               in
-               Fmt.failwith "invalid list elt (%a, %a, %a, %a)"
-                 pp a pp b pp c pp d)
-          | x, _ ->
-            (* XXX(dinosaure): we don't need to check [b], [aux_l] returns in any
-               case a value or raise an error. *)
-            error e g [ ExpectedValue x ]
-      in aux_l l
-    in
+               Expr (Bin (Cons, e1, e2), g0, tl)
+             | _, _, _, _ ->
+               (* TODO(dinosaure): more explicit error. *)
+               error e g [ TypMismatch {a=Type.V t; b=Type.V t1}
+                         ; TypMismatch {a=Type.V tl; b=Type.V t2}
+                         ; EnvMismatch {g=Env.V g0; g'=Env.V g1}
+                         ; EnvMismatch {g=Env.V g0; g'=Env.V g2} ]) in
+      aux_l l in
     match aux e [] with
     | Expr (m, Env.[], t) -> Ok (V (m ,t))
     | Expr (_, g', _) -> Error (e, [], [EnvMismatch {g=Env.V []; g'=Env.V g'}])
     | exception Break e -> Error e
-
 end
 
 type expr = Expr.v

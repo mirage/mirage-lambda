@@ -369,6 +369,16 @@ module Expr = struct
     | Pair : ('a, 'b, 'a * 'b) binop
     | Eq  : ('a, 'a, bool) binop
 
+  let pp_binop : type l r v. (l, r, v) binop Fmt.t = fun ppf -> function
+    | Add  -> Fmt.string ppf "+"
+    | Mul  -> Fmt.string ppf "*"
+    | Sub  -> Fmt.string ppf "-"
+    | Div  -> Fmt.string ppf "/"
+    | Eq   -> Fmt.string ppf "="
+    | Pair -> Fmt.string ppf ","
+
+  let binop_to_string x = Fmt.strf "%a" pp_binop x
+
   type ('u, 'v) unop =
     | Fst: ('a * 'b, 'a) unop
     | Snd: ('a * 'b, 'b) unop
@@ -376,6 +386,14 @@ module Expr = struct
     | R  : 'a Type.t -> ('b, ('a, 'b) Type.either) unop
     | Oky: 'b Type.t -> ('a, ('a, 'b) result) unop
     | Err: 'a Type.t -> ('b, ('a, 'b) result) unop
+
+  let pp_unop : type u v. (u, v) unop Fmt.t = fun ppf -> function
+    | Fst    -> Fmt.string ppf "fst"
+    | Snd    -> Fmt.string ppf "snd"
+    | L ty   -> Fmt.pf ppf "L:%a" Type.pp ty
+    | R ty   -> Fmt.pf ppf "R:%a" Type.pp ty
+    | Oky ty -> Fmt.pf ppf "Ok:%a" Type.pp ty
+    | Err ty -> Fmt.pf ppf "Error:%a" Type.pp ty
 
   type 'a value = {
     t  : 'a Type.t;
@@ -405,6 +423,42 @@ module Expr = struct
             ; a : ('e * 'l, 'a) t
             ; b : ('e * 'r, 'a) t } -> ('e, 'a) t
     | If  : ('e, bool) t * ('e, 'a) t * ('e, 'a) t -> ('e, 'a) t
+
+  let rec pp : type e a. (e, a) t Fmt.t = fun ppf -> function
+    | Val v ->
+      v.pp ppf v.v
+    | Prm p ->
+      Fmt.pf ppf "%%%s" p.p.Parsetree.name
+    | Uno (o, e) ->
+      Fmt.pf ppf "@[<1>(@[%a@]@ @[%a@])@]" pp_unop o pp e
+    | Bin (o, a, b) ->
+      Type.pp_infix ~infix:(binop_to_string o) pp pp ppf (a, b)
+    | Opt (ty, Some expr) ->
+      Fmt.pf ppf "@[<1>(@[Some:%a option@]@ @[%a@])@]"
+        Type.pp ty pp expr
+    | Opt (ty, None) ->
+      Fmt.pf ppf "@[None:%a option@]" Type.pp ty
+    | Var v ->
+      Fmt.pf ppf "$%d" (Var.to_int v)
+    | Lam (ty, arg, expr) ->
+      Fmt.pf ppf "@[<2>(fun @[(%s:@ %a)@]@ -> @[<2>%a@])@]"
+        arg Type.pp ty pp expr
+    | Rec r ->
+      Fmt.pf ppf "@[<2>(rec @[(%s:@ %a)@]@ -> @[<2>%a@])@]"
+        (fst r.p) Type.pp (snd r.p) pp r.body
+    | App (a, b) ->
+      Fmt.pf ppf "@[(@[%a@]@ @[%a@])@]"
+        pp a pp b
+    | Let (ty, name, a, b) ->
+      Fmt.pf ppf "@[<v>@[<v2>let @[%s: %a@] =@ @[%a@]@]@ in@ @[<2>%a@]@]"
+        name Type.pp ty pp a pp b
+    | Swt { s; a; b; } ->
+       Fmt.pf ppf "@[<2>match %a with@\n| @[<2>@[L $1@] ->@ \
+                   @[%a@]@]@\n| @[<2>@[R $1@] ->@ @[%a@]@]@]"
+         pp s pp a pp b
+    | If (t, a, b) ->
+       Fmt.pf ppf "@[<v>@[<v2if %a then@,(%a)@]@,@[<v2>else@,(%a)@]@]"
+         pp t pp a pp b
 
   let rec get: type e a. (e, a) Var.t -> e -> a = fun v e ->
     match v, e with

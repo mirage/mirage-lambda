@@ -173,6 +173,9 @@ module Expr: sig
   val typ: Parsetree.expr -> (v, error) result
   (** [typ unsafe_expr] tries to type [unsafe_expr] and returns an {!expr}. *)
 
+  val pp: ('e, 'a) t Fmt.t
+  (** Pretty-printer of {!t}. *)
+
 end
 
 type 'a typ = 'a Type.t

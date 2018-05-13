@@ -29,10 +29,6 @@ module Type = struct
     | Some Eq.Refl -> true
     | _ -> false
 
-  let compare_abstract (A a) (A b) =
-    let c = String.compare a.name b.name in
-    if c = 0 then Eq.Witness.cmp a.wit b.wit else c
-
   type t =
     | Unit
     | Int
@@ -50,7 +46,7 @@ module Type = struct
     | Either of t * t
     | Result of t * t
     | Abstract of abstract
-  [@@deriving show, eq, ord]
+  [@@deriving show, eq]
 
   let _ = show
   let dump = pp
@@ -100,34 +96,26 @@ end
 type typ = Type.t
 let pp_typ = Type.pp
 let equal_typ = Type.equal
-let compare_typ = Type.compare
 
-type 'a cmp = 'a -> 'a -> int
-type value = V: { v: 'a; t: 'a T.t; pp: 'a Fmt.t; cmp: 'a cmp; } -> value
+type 'a eq = 'a -> 'a -> bool
+type value = V: { v: 'a; t: 'a T.t; pp: 'a Fmt.t; eq: 'a eq; } -> value
 
 let pp_value ppf (V t) = t.pp ppf t.v
 
 let equal_value (V a) (V b) =
   match T.equal a.t b.t with
-  | Some Eq.Refl -> a.cmp a.v b.v = 0
+  | Some Eq.Refl -> a.eq a.v b.v
   | None         -> false
-
-let compare_value (V a) (V b) =
-  match T.equal a.t b.t with
-  | Some Eq.Refl -> a.cmp a.v b.v
-  | None         -> 1
 
 type primitive =
   { name : string
   ; args : typ list
   ; ret  : typ
-  ; exp  : value list -> value
-        [@equal   fun _ _ -> true]
-        [@compare fun _ _ -> 0] }
-[@@deriving show, eq, ord]
+  ; exp  : value list -> value [@equal fun _ _ -> true] }
+[@@deriving show, eq]
 
 type arithmetic = [ `Add | `Sub | `Mul | `Div ]
-[@@deriving show, eq, ord]
+[@@deriving show, eq]
 
 type binop = [ arithmetic | `Pair | `Eq ]
 and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
@@ -149,15 +137,14 @@ and expr =
            ; b : expr
            ; s : expr }
   | If  of expr * expr * expr
-[@@deriving show, eq, ord]
+[@@deriving show, eq]
 
 let _ =
   show_expr, show_primitive, show_arithmetic, show_binop, show_unop,
-  show_var, compare_binop, compare_unop, compare_var
+  show_var
 
 let dump = pp_expr
 let equal = equal_expr
-let compare = compare_expr
 
 let dump_var ppf v = Fmt.pf ppf "$%d" v.id
 
@@ -234,15 +221,18 @@ let pp ppf t =
   in
   aux [] ppf t
 
-let value v t pp cmp = Val (V {v; t; pp; cmp;})
+let value v t pp eq = Val (V {v; t; pp; eq;})
 let of_value v = Val v
 let prim p = Prm p
 
-let unit = value () Unit (fun ppf () -> Fmt.pf ppf "()") (fun () () -> 0)
-let int n = value n Int Fmt.int (-)
-let int32 n = value n Int32 Fmt.int32 Int32.compare
-let int64 n = value n Int64 Fmt.int64 Int64.compare
-let string s = value s String (fun ppf s -> Fmt.pf ppf "%S" s) String.compare
+let equal_int : int -> int -> bool = (=)
+let equal_bool : bool -> bool -> bool = (=)
+
+let unit = value () Unit (fun ppf () -> Fmt.pf ppf "()") (fun () () -> true)
+let int n = value n Int Fmt.int equal_int
+let int32 n = value n Int32 Fmt.int32 Int32.equal
+let int64 n = value n Int64 Fmt.int64 Int64.equal
+let string s = value s String (fun ppf s -> Fmt.pf ppf "%S" s) String.equal
 
 let list ?typ l = Lst (typ, l)
 let array ?typ l = Arr (typ, l)
@@ -255,11 +245,7 @@ let pair a b = Bin (`Pair, a, b)
 let apply f a = App (f, a)
 let var id = Var { id }
 let match_ s a b = Swt {a; b; s}
-let bool b = value b Bool Fmt.bool (fun a b -> match a, b with
-    | true, true
-    | false, false -> 0
-    | true, false -> 1
-    | false, true -> (-1))
+let bool b = value b Bool Fmt.bool equal_bool
 let true_ = bool true
 let false_ = bool false
 

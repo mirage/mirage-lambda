@@ -155,85 +155,66 @@ module Type = struct
       | L x -> Fmt.pf ppf "L %a" (pp_val a) x
       | R x -> Fmt.pf ppf "R %a" (pp_val b) x
 
-  let rec cmp_val: type a. a t -> a Parsetree.cmp = fun t a b ->
+  let rec eq_val: type a. a t -> a Parsetree.eq = fun t a b ->
     match t with
-    | Unit -> 0
-    | Int -> (-) a b
-    | Int32 -> Int32.compare a b
-    | Int64 -> Int64.compare a b
-    | Bool ->
-      (match a, b with
-       | true, true | false, false -> 0
-       | true, false -> 1
-       | false, true -> (-1))
-    | String -> String.compare a b
+    | Unit -> true
+    | Int -> (=) a b
+    | Int32 -> Int32.equal a b
+    | Int64 -> Int64.equal a b
+    | Bool -> (=) a b
+    | String -> String.equal a b
     | List t ->
-      List.fold_left2
-        (fun c a b ->
-           let d = cmp_val t a b in
-           if c = 0 then c else d)
-        0 a b
+      (try List.for_all2 (eq_val t) a b
+       with Invalid_argument _ -> false)
     | Option t ->
       (match a, b with
-       | None, None -> 0
-       | Some a, Some b -> (cmp_val t) a b
-       | Some _, None -> 1
-       | None, Some _ -> (-1))
+       | None, None -> true
+       | Some a, Some b -> (eq_val t) a b
+       | Some _, None | None, Some _ -> false)
     | Array t ->
-      List.fold_left2
-        (fun c a b ->
-           let d = cmp_val t a b in
-           if c = 0 then c else d)
-        0 (Array.to_list a) (Array.to_list b)
-    | Pair (ta, tb) ->
-      let c = cmp_val ta (fst a) (fst b) in
-      if c = 0 then cmp_val tb (snd a) (snd b) else c
+      (try List.for_all2 (eq_val t) (Array.to_list a) (Array.to_list b)
+       with Invalid_argument _ -> false)
+    | Pair (ta, tb) -> eq_val ta (fst a) (fst b) && eq_val tb (snd a) (snd b)
     | Result (tok, terr) ->
       (match a, b with
-       | Ok va, Ok vb -> cmp_val tok va vb
-       | Error va, Error vb -> cmp_val terr va vb
-       | Ok _, Error _ -> 1
-       | Error _, Ok _ -> (-1))
+       | Ok va, Ok vb -> eq_val tok va vb
+       | Error va, Error vb -> eq_val terr va vb
+       | Ok _, Error _ | Error _, Ok _ -> false)
     | Either (tl, tr) ->
       (match a, b with
-       | L va, L vb -> cmp_val tl va vb
-       | R va, R vb -> cmp_val tr va vb
-       | L _, R _ -> 1
-       | R _, L _ -> (-1))
+       | L va, L vb -> eq_val tl va vb
+       | R va, R vb -> eq_val tr va vb
+       | L _, R _ | R _, L _ -> false)
     | Lwt        -> invalid_arg "compare: type constructor"
     | Abstract _ -> invalid_arg "compare: abstract value"
     | Arrow _    -> invalid_arg "compare: functional value"
     | Apply _    -> invalid_arg "compare: unconstructed type"
 
-  let rec cmp: type a. a t Parsetree.cmp
+  let rec eq: type a. a t Parsetree.eq
     = fun a b -> match a, b with
-    | Unit,   Unit   -> 0
-    | Int,    Int    -> 0
-    | Int32,  Int32  -> 0
-    | Int64,  Int64  -> 0
-    | Bool,   Bool   -> 0
-    | String, String -> 0
-    | Lwt,    Lwt    -> 0
-    | List ta,   List tb   -> cmp ta tb
-    | Option ta, Option tb -> cmp ta tb
-    | Array ta,  Array tb  -> cmp ta tb
+    | Unit,   Unit   -> true
+    | Int,    Int    -> true
+    | Int32,  Int32  -> true
+    | Int64,  Int64  -> true
+    | Bool,   Bool   -> true
+    | String, String -> true
+    | Lwt,    Lwt    -> true
+    | List ta,   List tb   -> eq ta tb
+    | Option ta, Option tb -> eq ta tb
+    | Array ta,  Array tb  -> eq ta tb
     | Apply (ta, tb), Apply (tx, ty) ->
-      let c = cmp ta tx in
-      if c = 0 then cmp tb ty else c
+      eq ta tx && eq tb ty
     | Pair (ta, tb),   Pair (tx, ty) ->
-      let c = cmp ta tx in
-      if c = 0 then cmp tb ty else c
+      eq ta tx && eq tb ty
     | Result (ta, tb), Result (tx, ty) ->
-      let c = cmp ta tx in
-      if c = 0 then cmp tb ty else c
+      eq ta tx && eq tb ty
     | Either (ta, tb), Either (tx, ty) ->
-      let c = cmp ta tx in
-      if c = 0 then cmp tb ty else c
-    | Abstract ta,     Abstract tb ->
+      eq ta tx && eq tb ty
+    | Abstract ta, Abstract tb ->
       (match Eq.Witness.eq ta.Eq.wit tb.Eq.wit with
-       | Some Eq.Refl -> 0
-       | None -> 1)
-    | _, _ -> 1
+       | Some Eq.Refl -> true
+       | None -> false)
+    | _, _ -> false
 end
 
 module Env = struct
@@ -310,15 +291,15 @@ module Value = struct
 
   let untype: type a. a Type.t -> a -> Parsetree.value = fun t v ->
     let pp = Type.pp_val t in
-    let cmp = Type.cmp_val t in
-    Parsetree.V {v; t; pp; cmp}
+    let eq = Type.eq_val t in
+    Parsetree.V {v; t; pp; eq}
 
   let untype_lwt:
     type a. a Lwt.t Type.t -> (a, Type.lwt) Type.app -> Parsetree.value =
     fun t (App v) ->
       let pp = Type.pp_val t in
-      let cmp = Type.cmp_val t in
-      Parsetree.V {v = Type.Lwt.prj v; t; pp; cmp}
+      let eq = Type.eq_val t in
+      Parsetree.V {v = Type.Lwt.prj v; t; pp; eq}
 
 end
 
@@ -404,7 +385,7 @@ module Expr = struct
     t  : 'a Type.t;
     v  : 'a;
     pp : 'a Fmt.t;
-    cmp: 'a Parsetree.cmp;
+    eq : 'a Parsetree.eq;
   }
 
   type ('e, 'p, 'r) rec_ = {
@@ -515,7 +496,7 @@ module Expr = struct
 
   (* combinators *)
 
-  let value t v = Val {t; v; pp = Type.pp_val t; cmp = Type.cmp_val t}
+  let value t v = Val {t; v; pp = Type.pp_val t; eq = Type.eq_val t}
 
   let unit   _ = value Unit ()
   let int    x = value Int x
@@ -560,7 +541,7 @@ module Expr = struct
     match e with
     | Val {t=Type.List t;v=[];_} -> P.list ~typ:(Type.untype t) []
     | Val {t=Type.Array t;v=[||];_} -> P.array ~typ:(Type.untype t) [||]
-    | Val {v;t;pp;cmp} -> P.value v t pp cmp
+    | Val {v;t;pp;eq}  -> P.value v t pp eq
     | Prm x            -> P.prim (Prim.untype x)
     | Uno (Fst, x)     -> P.fst (untype x)
     | Uno (Snd, x)     -> P.snd (untype x)
@@ -659,7 +640,7 @@ module Expr = struct
     let rec aux: Parsetree.expr -> Parsetree.typ list -> a_expr = fun e g ->
       let Env.V g' = Env.typ g in
       match e with
-      | Val (Parsetree.V {v;t;pp;cmp}) -> Expr (Val {v;t;pp;cmp}, g', t)
+      | Val (Parsetree.V {v;t;pp;eq}) -> Expr (Val {v;t;pp;eq}, g', t)
       | Lst (t, l) -> typ_list t l g
       | Arr (t, a) ->
         let typ_array t a g =

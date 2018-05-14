@@ -63,6 +63,7 @@ module Type: sig
   (** {2 Pretty-printer.} *)
 
   val pp_val: 'a t -> 'a Fmt.t
+  val eq_val: 'a t -> 'a Parsetree.eq
 
   (** {2 Witness type value.} *)
 
@@ -70,6 +71,9 @@ module Type: sig
 
   val typ: Parsetree.typ -> v
   (** [typ ut] returns a witness of type [ut]. *)
+
+  val eq: 'a t Parsetree.eq
+  val pp: 'a t Fmt.t
 end
 
 module Value: sig
@@ -168,6 +172,9 @@ module Expr: sig
 
   val typ: Parsetree.expr -> (v, error) result
   (** [typ unsafe_expr] tries to type [unsafe_expr] and returns an {!expr}. *)
+
+  val pp: ('e, 'a) t Fmt.t
+  (** Pretty-printer of {!t}. *)
 
 end
 

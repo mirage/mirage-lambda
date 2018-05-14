@@ -97,13 +97,14 @@ type typ = Type.t
 let pp_typ = Type.pp
 let equal_typ = Type.equal
 
-type value = V: { v: 'a; t: 'a T.t; pp: 'a Fmt.t } -> value
+type 'a eq = 'a -> 'a -> bool
+type value = V: { v: 'a; t: 'a T.t; pp: 'a Fmt.t; eq: 'a eq; } -> value
 
 let pp_value ppf (V t) = t.pp ppf t.v
 
 let equal_value (V a) (V b) =
   match T.equal a.t b.t with
-  | Some Eq.Refl -> a.v = b.v
+  | Some Eq.Refl -> a.eq a.v b.v
   | None         -> false
 
 type primitive =
@@ -220,14 +221,18 @@ let pp ppf t =
   in
   aux [] ppf t
 
-let value v t pp = Val (V {v; t; pp})
+let value v t pp eq = Val (V {v; t; pp; eq;})
+let of_value v = Val v
 let prim p = Prm p
 
-let unit = value () Unit (fun ppf () -> Fmt.pf ppf "()")
-let int n = value n Int Fmt.int
-let int32 n = value n Int32 Fmt.int32
-let int64 n = value n Int64 Fmt.int64
-let string s = value s String (fun ppf s -> Fmt.pf ppf "%S" s)
+let equal_int : int -> int -> bool = (=)
+let equal_bool : bool -> bool -> bool = (=)
+
+let unit = value () Unit (fun ppf () -> Fmt.pf ppf "()") (fun () () -> true)
+let int n = value n Int Fmt.int equal_int
+let int32 n = value n Int32 Fmt.int32 Int32.equal
+let int64 n = value n Int64 Fmt.int64 Int64.equal
+let string s = value s String (fun ppf s -> Fmt.pf ppf "%S" s) String.equal
 
 let list ?typ l = Lst (typ, l)
 let array ?typ l = Arr (typ, l)
@@ -240,7 +245,7 @@ let pair a b = Bin (`Pair, a, b)
 let apply f a = App (f, a)
 let var id = Var { id }
 let match_ s a b = Swt {a; b; s}
-let bool b = value b Bool Fmt.bool
+let bool b = value b Bool Fmt.bool equal_bool
 let true_ = bool true
 let false_ = bool false
 

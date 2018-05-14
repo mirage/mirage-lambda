@@ -86,8 +86,10 @@ module Type: sig
   val dump: t Fmt.t
 end
 
+type 'a eq = 'a -> 'a -> bool
+
 (** OCaml value (with type and pretty-printer). *)
-type value = V: { v: 'a; t: 'a T.t; pp: 'a Fmt.t } -> value
+type value = V: { v: 'a; t: 'a T.t; pp: 'a Fmt.t; eq: 'a eq; } -> value
 
 (** Type of {!expr}. *)
 type typ = Type.t
@@ -146,6 +148,7 @@ and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
 (** {2 Pretty-printers.} *)
 
 val pp: expr Fmt.t
+val equal: expr eq
 val dump: expr Fmt.t
 
 val pp_value: value Fmt.t
@@ -172,7 +175,8 @@ val string: string -> expr
 val true_: expr
 val false_: expr
 
-val value: 'a -> 'a T.t -> 'a Fmt.t -> expr
+val value: 'a -> 'a T.t -> 'a Fmt.t -> 'a eq -> expr
+val of_value: value -> expr
 
 val lambda: (string * typ) list -> expr -> expr
 
@@ -203,5 +207,3 @@ val ( + ): expr -> expr -> expr
 val ( - ): expr -> expr -> expr
 val ( * ): expr -> expr -> expr
 val ( / ): expr -> expr -> expr
-
-val equal: expr -> expr -> bool

@@ -79,7 +79,7 @@ exposes to the clients:
 
 ## Sponsor
 
+Mirage Lambda has been sponsored by [Tweag I/O](https://www.tweag.io/).
+
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 [<img src="https://www.tweag.io/img/tweag-med.png" height="65">](http://tweag.io)
-
-Mirage Lambda has been sponsored by [Tweag I/O](https://www.tweag.io/).

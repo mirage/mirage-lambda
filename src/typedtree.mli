@@ -183,5 +183,7 @@ type expr = Expr.v
 type value = V: 'a * 'a Type.t -> value
 (** Value with type witness. *)
 
+val pp_value: value Fmt.t
+
 val err_type_mismatch:
   Parsetree.expr -> 'a Type.t -> 'b Type.t -> ('c, Expr.error) result

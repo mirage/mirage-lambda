@@ -24,6 +24,8 @@ module Expr = Typedtree.Expr
 type 'a typ = 'a Typedtree.typ
 type expr = Typedtree.expr
 type value = Typedtree.value
+val pp_value: value Fmt.t
+val string_of_value: value -> string
 
 (** Type of errors. *)
 type error
@@ -56,8 +58,12 @@ val parse:
    with their associated names (see {!primitive}) in resulted {!Parsetree.expr}
    expression. [?file] helps to produce a better error message. *)
 
+val parse_exn: ?file:string -> ?primitives:primitive list -> string -> Parsetree.expr
+
 val typ: Parsetree.expr -> (expr, error) result
 (** [typ unsafe_expr] tries to type [unsafe_expr]. *)
+
+val typ_exn: Parsetree.expr -> expr
 
 val untype: expr -> Parsetree.expr
 

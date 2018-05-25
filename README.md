@@ -1,9 +1,12 @@
 ## mirage-lambda -- an eDSL to ship computation to MirageOS applications
 
-Mirage Lambda allows to describe functions using a monorphic typed lambda
-calculus with well-typed host primitives (for instance calls to MirageOS APIs).
-A client can then describe a bit of computation, serialise the function and send
-it, over the network, to be (safely) executed on a remote location.
+Mirage Lambda allows to describe functions using a monomorphic typed
+lambda calculus with well-typed host primitives (for instance calls to
+the MirageOS APIs). A client can use the eDSL to describe the function
+to execute remotely. The Mirage Lambda API provides ways to parse,
+print, type, untype and to evaluate these terms. These functions can
+be used by both the client and the servers to ship code to be run on
+remotely.
 
 ## Installation
 

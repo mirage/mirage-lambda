@@ -221,6 +221,7 @@ let pp ppf t =
   in
   aux [] ppf t
 
+let to_string = Fmt.to_to_string pp
 let value v t pp eq = Val (V {v; t; pp; eq;})
 let of_value v = Val v
 let prim p = Prm p

@@ -23,6 +23,59 @@ the source interfaces. It can be consulted [online][doc] or via
 
 [doc]: https://mirage.github.io/mirage-lambda
 
+## Example
+
+The factorial can be defined as a `('a, int -> int) Lambda.Expr.t` value.
+The `'a` is the of the environment, `int -> int` is the type of the expression:
+
+```ocaml
+open Lambda
+
+let fact =
+  let open Expr in
+  let main =
+    let_rec Type.("x", int ** int) Type.int (fun ~context ~return ~continue ->
+        let acc = fst context in
+        let n = snd context in
+        (if_ (n = int 0)
+           (return acc)
+           (continue (pair (acc * n) (n - int 1))))
+      ) in
+  lambda ("x", Type.int) (main $ (pair (int 1) (var Var.o)))
+```
+
+To ship the code and waiting for a server response:
+
+```ocaml
+  let u  = Expr.untype fact in      (* Generate an AST *)
+  let s  = Parsetree.to_string u in (* Pretty-print the AST *)
+  send s >>= receive
+```
+
+The lambda server, on the other-side will receive the code, type it, and
+evaluate it and send the response back:
+
+```ocaml
+  receive () >>= fun s ->
+  let u = parse_exn s in (* Parse *)
+  let e = typ_exn u in   (* Type *)
+  let v = eval e in      (* Evaluate *)
+  send (string_of_value v)
+```
+
+The server can also defines a list of host function primitives that it can
+exposes to the clients:
+
+```ocaml
+  let primitives = [
+    primitive "string_of_int" [Type.int] Type.string string_of_int
+    primitive "string_of_float" [Type.float] Type.string string_of_int
+  ] in
+  ...
+  (* Exposes the names [string_of_int] and [string_of_float] in the context. *)
+  let v = parse_exn ~primitives s in
+  ...
+```
 
 ## Sponsor
 

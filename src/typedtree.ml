@@ -905,6 +905,8 @@ type expr = Expr.v
 type 'a typ = 'a Type.t
 type value = V: 'a * 'a Type.t -> value
 
+let pp_value ppf (V (v, t)) = Type.pp_val t ppf v
+
 open Expr
 
 let err_type_mismatch m t t': (_, error) result =

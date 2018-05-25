@@ -40,6 +40,11 @@ let parse ?(file="<none>") ?(primitives=[]) str =
   | exception Lexer.Error msg -> err msg
   | exception Parser.Error    -> err "syntax error"
 
+let parse_exn ?file ?primitives str =
+  match parse ?file ?primitives str with
+  | Ok y           -> y
+  | Error (`Msg e) -> invalid_arg e
+
 (* Typer *)
 
 module Parsetree = Parsetree
@@ -50,11 +55,18 @@ module Expr = Typedtree.Expr
 
 let typ = Expr.typ
 
+let typ_exn e = match typ e with
+  | Ok t    -> t
+  | Error e -> Fmt.kstrf invalid_arg "%a" Expr.pp_error e
+
 let untype (Expr.V (e, _)) = Expr.untype e
 
 type 'a typ = 'a Type.t
 type expr = Typedtree.expr
 type value = Typedtree.value
+
+let pp_value = Typedtree.pp_value
+let string_of_value = Fmt.to_to_string pp_value
 
 type error = Expr.error
 let pp_error = Expr.pp_error

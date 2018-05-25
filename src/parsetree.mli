@@ -148,6 +148,7 @@ and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
 (** {2 Pretty-printers.} *)
 
 val pp: expr Fmt.t
+val to_string: expr -> string
 val equal: expr eq
 val dump: expr Fmt.t
 

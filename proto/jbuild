@@ -1,0 +1,12 @@
+(jbuild_version 1)
+
+(rule
+ ((targets (lambda_types.ml lambda_types.mli lambda_pb.ml lambda_pb.mli))
+  (deps    (lambda.proto))
+  (action  (run ocaml-protoc -binary -ml_out . lambda.proto))))
+
+(library
+ ((name lambda_protobuf)
+  (flags (:standard -w -30))
+  (public_name lambda-protobuf)
+  (libraries (ocaml-protoc))))

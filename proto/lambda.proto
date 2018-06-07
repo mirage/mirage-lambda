@@ -1,0 +1,182 @@
+message Type {
+    message Unit { }
+    message Int { }
+    message Int32 { }
+    message Int64 { }
+    message Bool { }
+    message String { }
+    message Lwt { }
+    message List {
+        required Type value = 0;
+    }
+    message Array {
+        required Type value = 0;
+    }
+    message Option {
+        required Type value = 0;
+    }
+    message Apply {
+        required Type a = 0;
+        required Type b = 1;
+    }
+    message Arrow {
+        required Type a = 0;
+        required Type b = 1;
+    }
+    message Pair {
+        required Type a = 0;
+        required Type b = 1;
+    }
+    message Either {
+        required Type a = 0;
+        required Type b = 1;
+    }
+    message Result {
+        required Type a = 0;
+        required Type b = 1;
+    }
+    message Abstract {
+        required string witness = 0;
+    }
+
+    oneof t {
+        Unit unit = 0;
+        Int int = 1;
+        Int32 int32 = 2;
+        Int64 int64 = 3;
+        Bool bool = 4;
+        String string = 5;
+        Lwt lwt = 6;
+        List list = 7;
+        Array array = 8;
+        Option option = 9;
+        Apply apply = 10;
+        Arrow arrow = 11;
+        Pair pair = 12;
+        Either either = 13;
+        Result result = 14;
+        Abstract abstract = 15;
+    }
+}
+
+message Primitive {
+    required string name = 1;
+    repeated Type arguments = 2;
+    required Type return = 3;
+    required int32 smartptr = 4;
+}
+
+enum Binop {
+    ADD = 0;
+    SUB = 1;
+    MUL = 2;
+    DIV = 3;
+    PAIR = 4;
+    EQ = 5;
+}
+
+message Unop {
+    message Fst { }
+    message Snd { }
+    message L { required Type value = 0; }
+    message R { required Type value = 0; }
+    message Ok { required Type value = 0; }
+    message Error { required Type value = 0; }
+
+    oneof t {
+        Fst fst = 0;
+        Snd snd = 1;
+        L l = 2;
+        R r = 3;
+        Ok ok = 4;
+        Error error = 5;
+    }
+}
+
+message Value {
+    message Unit { }
+    message Int { required int32 value = 0; }
+    message Int32 { required int32 value = 0; }
+    message Int64 { required int64 value = 0; }
+    message Bool { required bool value = 0; }
+    message List { repeated Value value = 0; }
+    message Array { repeated Value value = 0; }
+    message Option { optional Value value = 0; }
+    message Pair { required Value a = 0;
+                   required Value b = 1; }
+
+    oneof t {
+        Unit unit = 0;
+        Int int = 1;
+        Int32 int32 = 2;
+        Int64 int64 = 3;
+        Bool bool = 4;
+        List list = 5;
+        Array array = 6;
+        Option option = 7;
+        Pair pair = 8;
+    }
+}
+
+message Expr {
+    message Val { required Value value = 0; }
+    message Prm { required Primitive value = 0; }
+    message Lst { optional Type typ = 0;
+                  repeated Expr expr = 1; }
+    message Arr { optional Type typ = 0;
+                  repeated Expr expr = 1; }
+    message Opt { optional Type typ = 0;
+                  optional Expr expr = 1; }
+    message Var { required int32 var = 0; }
+    message Lam { required Type typ = 0;
+                  required string var = 1;
+                  required Expr expr = 2; }
+    message Rec { required Type ret = 0;
+                  required string name = 1;
+                  required Type argument = 2;
+                  required Expr expr = 3; }
+    message App { required Expr a = 0;
+                  required Expr b = 1; }
+    message Bin {
+        required Binop op = 0;
+        required Expr a = 1;
+        required Expr b = 2;
+    }
+    message Uno {
+        required Unop op = 0;
+        required Expr x = 1;
+    }
+    message Let {
+        required Type typ = 0;
+        required string name = 1;
+        required Expr expr = 2;
+        required Expr body = 3;
+    }
+    message Swt {
+        required Expr a = 0;
+        required Expr b = 1;
+        required Expr s = 2;
+    }
+    message If {
+        required Expr a = 0;
+        required Expr b = 1;
+        required Expr s = 2;
+    }
+
+    oneof t {
+        Val val = 0;
+        Prm prm = 1;
+        Lst lst = 2;
+        Arr arr = 3;
+        Opt opt = 4;
+        Var var = 5;
+        Lam lam = 6;
+        Rec rec = 7;
+        App app = 8;
+        Bin bin = 9;
+        Uno uno = 10;
+        Let let = 11;
+        Swt swt = 12;
+        If if = 13;
+    }
+}

@@ -6,7 +6,7 @@ license: "ISC"
 dev-repo: "https://github.com/samoht/mirage-lambda.git"
 bug-reports: "https://github.com/samoht/mirage-lambda/issues"
 
-build: [ "jbuilder" "build" ]
+build: [ "jbuilder" "build" "-p" name "-j" jobs ]
 depends: [
   "jbuilder" {build}
   "fmt"

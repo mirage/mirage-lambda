@@ -72,6 +72,7 @@ module Type: sig
   val result: t -> t -> t
 
   val abstract: 'a Eq.witness -> t
+  val unsafe_abstract: abstract -> t
   val apply: t -> t -> t
 
   (** {2 Infix operators.} *)

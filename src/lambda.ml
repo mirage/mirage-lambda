@@ -49,6 +49,7 @@ let parse_exn ?file ?primitives str =
 
 module Parsetree = Parsetree
 module Fuzzer = Fuzzer
+module Protobuf = Protobuf
 
 module Type = Typedtree.Type
 module Var = Typedtree.Var

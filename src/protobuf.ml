@@ -42,6 +42,21 @@ let unop_from : ?gamma:Type.abstract Gamma.t -> Types.unop -> unop = fun ?gamma 
   | Types.Ok { value; } -> Ok (typ_from ?gamma value)
   | Types.Error { value; } -> Error (typ_from ?gamma value)
 
+let opt_eq ~eq a b = match a, b with
+  | Some a, Some b -> eq a b
+  | None, None -> true
+  | _, _ -> false
+
+let lst_eq ~eq a b =
+  try List.for_all2 eq a b
+  with _ -> false
+
+let arr_eq ~eq a b =
+  try List.for_all2 eq (Array.to_list a) (Array.to_list b)
+  with _ -> false
+
+let pair_eq ~eqa ~eqb (x, y) (a, b) = eqa x a && eqb y b
+
 let rec value_from : Types.value -> value = function
   | Types.Unit ->
     V { v = (); t = T.Unit; pp = (fun ppf () -> Fmt.pf ppf "()"); eq = (fun () () -> true); }
@@ -51,14 +66,83 @@ let rec value_from : Types.value -> value = function
     V { v = value; t = T.Int32; pp = Fmt.int32; eq = Pervasives.(=) }
   | Types.Int64 { value; } ->
     V { v = value; t = T.Int64; pp = Fmt.int64; eq = Pervasives.(=) }
-  | Types.Option { value = Some value; } ->
+  | Types.Bool { value; } ->
+    V { v = value; t = T.Bool; pp = Fmt.bool; eq = Pervasives.(=) }
+  | Types.String { value; } ->
+    V { v = value; t = T.String; pp = Fmt.string; eq = Pervasives.(=) }
+  | Types.Option { typ; value = Some value; } ->
     let V { v; t; pp; eq; } = value_from value in
-    let eq a b = match a, b with
-      | Some a, Some b -> eq a b
-      | None, None -> true
-      | _, _ -> false in
-    V { v = Some v; t = T.Option t; pp = Fmt.option pp; eq; }
-  | _ -> assert false
+    let Typedtree.Type.V t' = Typedtree.Type.typ (typ_from typ) in
+    (match T.equal t t' with
+     | Some Eq.Refl -> V { v = Some v; t = T.Option t; pp = Fmt.option pp; eq = opt_eq ~eq }
+     | None -> Fmt.invalid_arg "Cannot unify %a and %a"
+                 Typedtree.Type.pp t
+                 Typedtree.Type.pp t')
+  | Types.Option { typ; value = None; } ->
+    let Typedtree.Type.V t = Typedtree.Type.typ (typ_from typ) in
+    let pp = Typedtree.Type.pp_val t in
+    let eq = Typedtree.Type.eq_val t in
+    V { v = None; t = T.Option t; pp = Fmt.option pp; eq = opt_eq ~eq }
+  | Types.List { typ; value = []; } ->
+    let Typedtree.Type.V t = Typedtree.Type.typ (typ_from typ) in
+    let pp = Typedtree.Type.pp_val t in
+    let eq = Typedtree.Type.eq_val t in
+    V { v = []; t = T.List t; pp = Fmt.list pp; eq = lst_eq ~eq }
+  | Types.Array { typ; value = []; } ->
+    let Typedtree.Type.V t = Typedtree.Type.typ (typ_from typ) in
+    let pp = Typedtree.Type.pp_val t in
+    let eq = Typedtree.Type.eq_val t in
+    V { v = [||]; t = T.Array t; pp = Fmt.array pp; eq = arr_eq ~eq }
+  | Types.List { typ; value; } ->
+    let Typedtree.Type.V t' = Typedtree.Type.typ (typ_from typ) in
+    let pp = Typedtree.Type.pp_val (T.List t') in
+    let eq = Typedtree.Type.eq_val (T.List t') in
+    let rec go acc = function
+      | [] ->
+        let V { v; t; pp; eq; } = acc in
+        (match T.equal t (T.List t') with
+         | Some Eq.Refl -> V { v = List.rev v; t; pp; eq; }
+         | None -> assert false)
+      | x :: r ->
+        let V { v = x; t; pp = _; eq = _; } = value_from x in
+        let V { v = acc; t = tacc; pp; eq; } = acc in
+        (match T.equal t t', T.equal (T.List t) tacc with
+         | Some Eq.Refl, Some Eq.Refl ->
+           go (V { v = x :: acc; t = T.List t; pp; eq; }) r
+         | _, _ -> Fmt.invalid_arg "Cannot unify %a and %a"
+                     Typedtree.Type.pp t
+                     Typedtree.Type.pp t) in
+    go (V { v = []; t = T.List t'; pp; eq; }) value
+  | Types.Array { typ; value; } ->
+    let Typedtree.Type.V t' = Typedtree.Type.typ (typ_from typ) in
+    let pp = Typedtree.Type.pp_val (T.List t') in
+    let eq = Typedtree.Type.eq_val (T.List t') in
+    let cast (V { v; t; _ }) = match T.equal (T.List t') t with
+      | Some Eq.Refl ->
+        let pp = Typedtree.Type.pp_val (T.Array t') in
+        let eq = Typedtree.Type.eq_val (T.Array t') in
+        V { v = Array.of_list v; t = T.Array t'; pp; eq; }
+      | None -> assert false in
+    let rec go acc = function
+      | [] ->
+        let V { v; t; pp; eq; } = acc in
+        (match T.equal t (T.List t') with
+         | Some Eq.Refl -> V { v = List.rev v; t; pp; eq; }
+         | None -> assert false)
+      | x :: r ->
+        let V { v = x; t; pp = _; eq = _; } = value_from x in
+        let V { v = acc; t = tacc; pp; eq; } = acc in
+        (match T.equal t t', T.equal (T.List t) tacc with
+         | Some Eq.Refl, Some Eq.Refl ->
+           go (V { v = x :: acc; t = T.List t; pp; eq; }) r
+         | _, _ -> Fmt.invalid_arg "Cannot unify %a and %a"
+                     Typedtree.Type.pp t
+                     Typedtree.Type.pp t) in
+    go (V { v = []; t = T.List t'; pp; eq; }) value |> cast
+  | Types.Pair { a; b; } ->
+    let V { v = a; t = ta; pp = ppa; eq = eqa; } = value_from a in
+    let V { v = b; t = tb; pp = ppb; eq = eqb; } = value_from b in
+    V { v = (a, b); t = T.Pair (ta, tb); pp = Fmt.pair ppa ppb; eq = pair_eq ~eqa ~eqb }
 
 module Option = struct let map f = function Some v -> Some (f v) | None -> None end
 
@@ -74,6 +158,7 @@ let expr_from
       | Types.Val { value = Types.Int64 { value; }; } -> int64 value
       | Types.Val { value = Types.Bool { value = true; }; } -> true_
       | Types.Val { value = Types.Bool { value = false; }; } -> false_
+      | Types.Val { value = Types.String { value; }; } -> string value
       | Types.Val { value = x; } ->
         let V { v; t; pp; eq; } = value_from x in
         value v t pp eq
@@ -92,12 +177,10 @@ let expr_from
         list ?typ:(Option.map (typ_from ?gamma) typ) (List.map go expr)
       | Types.Arr { typ; expr; } ->
         array ?typ:(Option.map (typ_from ?gamma) typ) (Array.of_list (List.map go expr))
-      | Types.Opt { typ = Some typ; expr = None; } ->
+      | Types.Opt { typ; expr = None; } ->
         none (typ_from ?gamma typ)
       | Types.Opt { expr = Some expr; _ } ->
         some (go expr)
-      | Types.Opt { typ = None; expr = None; } ->
-        invalid_arg "Impossible to de-serialize a None value without a type"
       | Types.Var { var = id; } ->
         var (Int32.to_int id)
       | Types.Lam { typ; var; expr; } ->
@@ -117,7 +200,7 @@ let expr_from
       | Types.Bin { op = Types.Pair; a; b; } ->
         pair (go a) (go b)
       | Types.Bin { op = Types.Eq; a; b; } ->
-        (go a) = (go b) (* XXX(dinosaure): take care we use Parsetree.(=). *)
+        (go a) = (go b) (* XXX(dinosaure): we use Parsetree.(=). *)
       | Types.Uno { op = Types.Fst; x; } ->
         fst (go x)
       | Types.Uno { op = Types.Snd; x; } ->

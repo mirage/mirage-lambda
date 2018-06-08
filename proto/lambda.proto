@@ -99,11 +99,23 @@ message Value {
     message Int32 { required int32 value = 0; }
     message Int64 { required int64 value = 0; }
     message Bool { required bool value = 0; }
-    message List { repeated Value value = 0; }
-    message Array { repeated Value value = 0; }
-    message Option { optional Value value = 0; }
-    message Pair { required Value a = 0;
-                   required Value b = 1; }
+    message String { required string value = 0; }
+    message List {
+        required Type typ = 0;
+        repeated Value value = 1;
+    }
+    message Array {
+        required Type typ = 0;
+        repeated Value value = 1;
+    }
+    message Option {
+        required Type typ = 0;
+        optional Value value = 1;
+    }
+    message Pair {
+        required Value a = 0;
+        required Value b = 1;
+    }
 
     oneof t {
         Unit unit = 0;
@@ -111,10 +123,11 @@ message Value {
         Int32 int32 = 2;
         Int64 int64 = 3;
         Bool bool = 4;
-        List list = 5;
-        Array array = 6;
-        Option option = 7;
-        Pair pair = 8;
+        String string = 5;
+        List list = 6;
+        Array array = 7;
+        Option option = 8;
+        Pair pair = 9;
     }
 }
 
@@ -125,7 +138,7 @@ message Expr {
                   repeated Expr expr = 1; }
     message Arr { optional Type typ = 0;
                   repeated Expr expr = 1; }
-    message Opt { optional Type typ = 0;
+    message Opt { required Type typ = 0;
                   optional Expr expr = 1; }
     message Var { required int32 var = 0; }
     message Lam { required Type typ = 0;

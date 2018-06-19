@@ -2,7 +2,7 @@ open Lambda_protobuf
 open Parsetree
 
 module Gamma = Map.Make(String)
-module Primitives = Map.Make(Int32)
+module Primitives = Map.Make(String)
 
 let typ_from ?(gamma = Gamma.empty) =
   let rec go : Types.type_ -> Type.t = function
@@ -164,15 +164,14 @@ let expr_from
         value v t pp eq
       | Types.Prm { value = { name
                             ; arguments
-                            ; return
-                            ; smartptr } } ->
+                            ; return } } ->
         (try
            primitive
              name
              (List.map (typ_from ?gamma) arguments)
              (typ_from ?gamma return)
-             (Primitives.find smartptr primitives)
-         with Not_found -> Fmt.invalid_arg "Primitive %s:%ld not found" name smartptr)
+             (Primitives.find name primitives)
+         with Not_found -> Fmt.invalid_arg "Primitive %s not found" name)
       | Types.Lst { typ; expr; } ->
         list ?typ:(Option.map (typ_from ?gamma) typ) (List.map go expr)
       | Types.Arr { typ; expr; } ->

@@ -65,7 +65,6 @@ message Primitive {
     required string name = 1;
     repeated Type arguments = 2;
     required Type return = 3;
-    required int32 smartptr = 4;
 }
 
 enum Binop {

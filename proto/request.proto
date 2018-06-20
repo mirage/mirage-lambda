@@ -1,0 +1,35 @@
+syntax = "proto2";
+
+/* Import path relative to WORKSPACE file */
+import "numero-mirage/proto/lambda.proto";
+
+/* Client request to server */
+message Request {
+    oneof request {
+        Execute execute = 1;
+    }
+}
+
+/* Server response to client */
+message Reply {
+    oneof reply {
+        ExecuteFailed failed = 1;
+        ExecuteResult result = 2;
+    }
+}
+
+/* Program execution request */
+message Execute {
+    required Expr program = 1;
+    required uint64 output_blocks = 2;
+}
+
+/* Program execution failed */
+message ExecuteFailed {
+    required string error = 1;
+}
+
+/* Program execution succeeded and produced a result */
+message ExecuteResult {
+    required Expr result = 1;
+}

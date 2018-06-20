@@ -84,6 +84,7 @@ module Type = struct
   let arrow a b = Arrow (a, b)
   let either a b = Either (a, b)
   let abstract a = Abstract (A a)
+  let unsafe_abstract a = Abstract a
   let apply a b = Apply (a, b)
   let result a b = Result (a, b)
 

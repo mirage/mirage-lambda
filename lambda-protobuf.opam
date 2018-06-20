@@ -9,12 +9,6 @@ bug-reports: "https://github.com/samoht/mirage-lambda/issues"
 build: [ "jbuilder" "build" "-p" name "-j" jobs ]
 depends: [
   "jbuilder" {build}
-  "fmt"
-  "logs"
-  "lwt"
-  "menhir"
-  "higher"
-  "ppx_deriving"
-  "crowbar"
-  "alcotest" {test}
+  "ocaml-protoc"
+  "lambda"
 ]

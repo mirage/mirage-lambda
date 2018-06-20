@@ -18,6 +18,8 @@
 let src = Logs.Src.create "lambda"
 module Log = (val Logs.src_log src : Logs.LOG)
 
+module Eq = Eq
+
 (* Parser *)
 
 let pp_position file ppf lexbuf =

@@ -5,7 +5,8 @@ services:
 - docker
 env:
   global:
-  - PINS="lambda:. crowbar:--dev"
+  - PINS="lambda:. lambda-protobuf:. crowbar:--dev"
   - DISTRO="debian-stable"
   matrix:
   - PACKAGE="lambda" OCAML_VERSION="4.05.0"
+  - PACKAGE="lambda-protobuf" OCAML_VERSION="4.05.0"

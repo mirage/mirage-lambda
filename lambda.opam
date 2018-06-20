@@ -15,8 +15,6 @@ depends: [
   "menhir"
   "higher"
   "ppx_deriving"
+  "crowbar"
   "alcotest" {test}
-]
-available: [
-  ocaml-version >= "4.06.0"
 ]

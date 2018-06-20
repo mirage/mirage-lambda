@@ -662,7 +662,11 @@ module Expr = struct
                 (match Type.equal t t1, Type.equal ta t2, Env.eq g0 g1, Env.eq g0 g2 with
                  | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
                    Expr (Nar (Arr t, e1 :: e2), g0, ta)
-                 | _, _, _, _ -> assert false)
+                 | _, _, _, _ ->
+                   error e g [ TypMismatch {a=Type.V t; b=Type.V t1}
+                             ; TypMismatch {a=Type.V ta; b=Type.V t2}
+                             ; EnvMismatch {g=Env.V g0; g'=Env.V g1}
+                             ; EnvMismatch {g=Env.V g0; g'=Env.V g2} ])
               | _, _ -> assert false in
           aux_a (Array.to_list a) in
         typ_array t a g

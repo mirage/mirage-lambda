@@ -16,6 +16,7 @@
  *)
 
 module Parsetree = Parsetree
+module Fuzzer = Fuzzer
 
 module Type = Typedtree.Type
 module Var = Typedtree.Var

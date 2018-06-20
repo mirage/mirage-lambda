@@ -1,0 +1,8 @@
+(executable
+ ((name       main)
+  (libraries (lambda-protobuf mirage-runtime
+              mirage-block-lwt mirage-stack-lwt
+              mirage-unix mirage-net-unix
+              tcpip.stack-socket
+              mirage-block-unix mirage-logs
+              mirage-clock-unix))))

@@ -15,6 +15,7 @@ depends: [
   "menhir"
   "higher"
   "ppx_deriving"
+  "crowbar"
   "alcotest" {test}
 ]
 available: [

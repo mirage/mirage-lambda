@@ -9,4 +9,4 @@
  ((name lambda_protobuf)
   (flags (:standard -w -30))
   (public_name lambda-protobuf)
-  (libraries (ocaml-protoc))))
+  (libraries (lambda ocaml-protoc))))

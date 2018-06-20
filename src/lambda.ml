@@ -18,6 +18,8 @@
 let src = Logs.Src.create "lambda"
 module Log = (val Logs.src_log src : Logs.LOG)
 
+module Eq = Eq
+
 (* Parser *)
 
 let pp_position file ppf lexbuf =
@@ -49,7 +51,6 @@ let parse_exn ?file ?primitives str =
 
 module Parsetree = Parsetree
 module Fuzzer = Fuzzer
-module Protobuf = Protobuf
 
 module Type = Typedtree.Type
 module Var = Typedtree.Var

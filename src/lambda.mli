@@ -18,6 +18,8 @@
 module Parsetree = Parsetree
 module Fuzzer = Fuzzer
 
+module Eq = Eq
+
 module Type = Typedtree.Type
 module Var = Typedtree.Var
 module Expr = Typedtree.Expr

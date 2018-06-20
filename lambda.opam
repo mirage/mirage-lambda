@@ -9,7 +9,6 @@ bug-reports: "https://github.com/samoht/mirage-lambda/issues"
 build: [ "jbuilder" "build" "-p" name "-j" jobs ]
 depends: [
   "jbuilder" {build}
-  "lambda-protobuf"
   "fmt"
   "logs"
   "lwt"

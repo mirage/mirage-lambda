@@ -34,7 +34,7 @@ val apply: ('a, 'b) Args.t -> 'a -> Parsetree.value list -> 'b * ('b, 'b) Args.t
 val untype: ('a, 'b) t -> Parsetree.expr
 
 val continue: Parsetree.typ -> Parsetree.typ -> string * Parsetree.expr
-val return: Parsetree.typ -> Parsetree.typ -> string * Parsetree.expr
+val stop: Parsetree.typ -> Parsetree.typ -> string * Parsetree.expr
 
 module L: sig
 

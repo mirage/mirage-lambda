@@ -112,6 +112,10 @@ type expr = private
   (** Array term. *)
   | Opt of typ option * expr option
   (** Option term. *)
+  | Ret of expr
+  (** Monadic return *)
+  | Bnd of expr * expr
+  (** Monadic bind *)
   | Var of var
   (** Variable. *)
   | Lam of typ * string * expr
@@ -171,6 +175,8 @@ val none: typ -> expr
 val some: expr -> expr
 val ok: typ -> expr -> expr
 val error: typ -> expr -> expr
+val return: expr -> expr
+val bind: expr -> expr -> expr
 
 val string: string -> expr
 

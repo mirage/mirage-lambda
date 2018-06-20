@@ -68,12 +68,12 @@ let continue l r =
   let n = "continue" in
   n, (v n Args.[l] ty f |> untype)
 
-let return l r =
+let stop l r =
   let Type.V l = Type.typ l in
   let Type.V r = Type.typ r in
   let ty = Type.either l r in
   let f x = T.R x in
-  let n = "return" in
+  let n = "stop" in
   n, (v n Args.[r] ty f |> untype)
 
 module L = struct

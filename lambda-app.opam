@@ -1,0 +1,23 @@
+opam-version: "1.2"
+maintainer: "Thomas Gazagnaire <thomas@gazagnaire.org>"
+authors: ["Thomas Gazagnaire" "Romain Calascibetta"]
+homepage: "https://github.com/samoht/mirage-lambda"
+license: "ISC"
+dev-repo: "https://github.com/samoht/mirage-lambda.git"
+bug-reports: "https://github.com/samoht/mirage-lambda/issues"
+
+build: [ "jbuilder" "build" "-p" name "-j" jobs ]
+depends: [
+  "jbuilder" {build}
+  "mirage"
+  "lambda-lambda"
+  "mirage-runtime"
+  "mirage-block-lwt"
+  "mirage-stack-lwt"
+  "mirage-unix"
+  "mirage-net-unix"
+  "tcpip"
+  "mirage-clock-unix"
+  "mirage-block-unix"
+  "mirage-logs"
+]

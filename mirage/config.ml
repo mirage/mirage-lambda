@@ -33,7 +33,7 @@ let port =
 let () =
   register "lambda" [
     foreign "Unikernel.Main"
-      ~packages:[package "lambda"]
+      ~packages:[package "lambda"; package "lambda-protobuf"]
       ~deps:[abstract img]
       ~keys:[Key.abstract port]
       (block @-> stackv4 @-> job)

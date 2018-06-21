@@ -80,6 +80,18 @@ exposes to the clients:
   ...
 ```
 
+## Docker Image
+
+To run the mirage-lambda demo app:
+
+```
+$ make block # this create an empty ./disk.img
+$ docker run -it -v `pwd`/disk.img:/disk.img -p 1234:1234 samoht/mirage-lambda
+```
+
+This app will listen on port `1234` for incoming connections and use
+`./disk.img` as block-device storage backend.
+
 ## Sponsors
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;

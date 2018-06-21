@@ -670,8 +670,16 @@ module Expr = struct
            Expr (f', gf, Type.Arrow (a, Type.Apply (b, Type.Lwt))) ->
            (match Env.equal gx gf, Type.equal a tx with
             | Some Eq.Refl, Some Eq.Refl -> Expr (Bnd (x', f'), gf, Type.lwt b)
-            | _ -> failwith "TODO")
-         | _ -> failwith "TODO")
+            | _, None ->
+              Log.err (fun l -> l "Bnd");
+              error e g [ TypMismatch { a = Type.V a; b = Type.V tx } ]
+            | _ ->
+              Log.err (fun l -> l "Bnd");
+              error e g [ EnvMismatch { g = Env.V gx; g' = Env.V gf } ]
+           )
+         | wexp, _ ->
+           Log.err (fun l -> l "Bnd");
+           error e g [ ExpectedLambda wexp ])
       | Lst (t, l) -> typ_list t l g
       | Arr (t, a) ->
         let typ_array t a g =

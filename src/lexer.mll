@@ -105,6 +105,8 @@ rule program t = parse
   | "list"   { p t "list"; S_LIST }
   | "array"  { p t "array"; S_ARRAY }
   | "option" { p t "option"; S_OPTION }
+  | "return" { p t "RETURN"; RETURN }
+  | ">>="    { p t ">>="; BIND }
   | "Ok"     { p t "Ok"; OK }
   | "Error"  { p t "Error"; ERROR }
   | "Some"   { p t "Some"; SOME }

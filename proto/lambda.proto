@@ -141,6 +141,9 @@ message Expr {
                   repeated Expr expr = 2; }
     message Opt { required Type typ = 1;
                   optional Expr expr = 2; }
+    message Ret { required Expr expr = 1; }
+    message Bnd { required Expr expr = 1;
+                  required Expr func = 2; }
     message Var { required int32 var = 1; }
     message Lam { required Type typ = 1;
                   required string var = 2;
@@ -192,5 +195,7 @@ message Expr {
         Let let = 12;
         Swt swt = 13;
         If if = 14;
+        Ret ret = 15;
+        Bnd bnd = 16;
     }
 }

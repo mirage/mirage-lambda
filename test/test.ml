@@ -144,7 +144,7 @@ let test_fact () =
       let acc: int = fst v in
       let n  : int = snd v in
       if n = 1 then
-         return acc
+         stop acc
       else
          continue (acc * n, n - 1)
     in
@@ -313,6 +313,14 @@ let test_block () =
   let _ = Block.read in
   ()
 
+let test_lwt () =
+  let primitives = [
+    L.primitive "double" [Type.int] Type.(lwt int) (fun x -> Lwt.return (x+x));
+  ] in
+  Alcotest.(check @@ ok (lwt_t int)) "double"
+    (Ok (Lwt.return 4))
+    (L.type_and_eval (parse_exn ~primitives "return 2 >>= double") Type.(lwt int))
+
 let () =
   Alcotest.run "compute" [
     "basic", [
@@ -331,5 +339,6 @@ let () =
     "primitives", [
       "simple"  , `Quick, test_primitives;
       "abstract", `Quick, test_block;
+      "lwt"     , `Quick, test_lwt;
     ];
   ]

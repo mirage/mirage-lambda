@@ -220,6 +220,10 @@ let expr_from
         let_var (typ_from ?gamma typ) name (go expr) (go body)
       | Types.Swt { a; b; s; } ->
         match_ (go s) (go a) (go b)
+      | Types.Ret { expr; } ->
+        return (go expr)
+      | Types.Bnd { expr; func; } ->
+        bind (go expr) (go func)
       | Types.If { a; b; s; } ->
         if_ (go s) (go a) (go b) in
     go

@@ -127,6 +127,8 @@ and expr =
   | Lst of typ option * expr list
   | Arr of typ option * expr array
   | Opt of typ option * expr option
+  | Ret of expr
+  | Bnd of expr * expr
   | Var of var
   | Lam of typ * string * expr
   | Rec of { r: typ; p: string * typ; e: expr }
@@ -184,6 +186,8 @@ let pp ppf t =
     | Arr (_, a)      -> Fmt.Dump.array pp ppf a
     | Opt (_, Some x) -> Fmt.Dump.option pp ppf (Some x)
     | Opt (t, None  ) -> Fmt.pf ppf "(None: %a option)" pp_typ_opt t
+    | Ret e           -> Fmt.pf ppf "(return (%a))" pp e
+    | Bnd (x, f)      -> Fmt.pf ppf "(%a >>= %a)" pp x pp f
     | Prm { name; _ } -> Fmt.string ppf name
     | Lam (t, name, e) ->
       let pp = aux (name :: ctx) in
@@ -239,6 +243,8 @@ let string s = value s String (fun ppf s -> Fmt.pf ppf "%S" s) String.equal
 let list ?typ l = Lst (typ, l)
 let array ?typ l = Arr (typ, l)
 let option ?typ l = Opt (typ, l)
+let return x = Ret x
+let bind x f = Bnd (x, f)
 let none typ = option ~typ None
 let some e = option (Some e)
 let ok t e = Uno (Ok t, e)
@@ -250,7 +256,6 @@ let match_ s a b = Swt {a; b; s}
 let bool b = value b Bool Fmt.bool equal_bool
 let true_ = bool true
 let false_ = bool false
-
 let fix p r e = Rec {r; p; e}
 
 let lambda args e =

@@ -42,9 +42,9 @@
   let add_ctx a ctx = List.rev_map fst a @ ctx
 
   let add_prim (_, l) r prims =
-    let return = Primitive.return l r in
+    let stop = Primitive.stop l r in
     let continue = Primitive.continue l r in
-    return :: continue :: prims
+    stop :: continue :: prims
 
   open Parsetree
 %}
@@ -57,6 +57,7 @@
 %token <bool> BOOL
 
 %token NONE SOME OK ERROR
+%token RETURN BIND
 %token PLUS MINUS
 %token TIMES
 %token EQ IN COLON SEMI
@@ -81,10 +82,11 @@
 %left     EQ
 %left     PLUS MINUS
 %left     TIMES
+%left     BIND
 
 %left     S_OPTION S_LIST S_ARRAY
 %nonassoc LSQU VAR INT INT32 INT64 STRING LPAR BOOL REC R L IF FUN FST SND
-          OK ERROR SOME
+          OK ERROR SOME RETURN
 %nonassoc APP
 
 %left BAR
@@ -121,6 +123,8 @@ expr:
   | L e=expr t=typ          { fun p c -> left t (e p c) }
   | OK e=expr t=typ         { fun p c -> ok t (e p c) }
   | ERROR t=typ e=expr      { fun p c -> error t (e p c) }
+  | RETURN e=expr           { fun p c -> return (e p c) }
+  | x=expr BIND f=expr      { fun p c -> bind (x p c) (f p c) }
   | SOME e=expr             { fun p c -> some (e p c) }
   | LPAR NONE COLON t=typ S_OPTION RPAR
     { fun _ _ -> none t }

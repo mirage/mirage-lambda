@@ -1,5 +1,6 @@
 (executable
  ((name       main)
+  (flags     (:standard -cclib -static))
   (libraries (lambda-protobuf mirage-runtime
               mirage-block-lwt mirage-stack-lwt
               mirage-unix mirage-net-unix

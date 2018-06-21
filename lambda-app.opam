@@ -19,4 +19,5 @@ depends: [
   "tcpip"
   "mirage-clock-unix"
   "mirage-block-unix"
+  "mirage-logs"
 ]

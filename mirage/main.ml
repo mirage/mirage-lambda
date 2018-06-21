@@ -28,7 +28,7 @@ let img1 = lazy (
   )
 
 let block11 = lazy (
-  Block.connect "/Users/thomas/git/mirage-lambda/mirage/./disk.img"
+  Block.connect "/disk.img"
   )
 
 let stackv4_socket1 = lazy (
@@ -97,4 +97,3 @@ let () =
     Lazy.force mirage_logs1 >>= fun _ ->
     Lazy.force mirage1
   in run t
-

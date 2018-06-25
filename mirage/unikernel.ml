@@ -12,7 +12,7 @@ module Main (B: BLOCK) (S: TCP) = struct
   let primitives b =
     (* XXX(samoht): we need support for more basic types *)
     let open Lambda in
-    let page_aligned_buffer = Type.abstract "Cstruct.t" in
+    let cstruct = Type.abstract "Cstruct.t" in
     let error = Type.abstract "Block.error" in
     let write_error = Type.abstract "Block.write_error" in
     let formatter = Type.abstract "Format.formatter" in
@@ -23,15 +23,34 @@ module Main (B: BLOCK) (S: TCP) = struct
       primitive "Block.pp_write_error"
         [formatter; write_error] Type.unit B.pp_write_error;
       L.primitive "Block.disconnect" [] Type.(lwt unit) B.(disconnect b);
+
+      (* info *)
       L.primitive "Block.get_info" [] Type.(lwt info) B.(get_info b);
+      primitive "read_write" [info] Type.bool
+        (fun b -> b.Mirage_block.read_write);
+      primitive "sector_size" [info] Type.int
+        (fun b -> b.Mirage_block.sector_size);
+      primitive "size_sectores" [info] Type.int64
+        (fun b -> b.Mirage_block.size_sectors);
+
       L.primitive "Block.read"
-        Type.[int64; list page_aligned_buffer]
+        Type.[int64; list cstruct]
         Type.(lwt (result unit error))
         B.(read b);
       L.primitive "Block.write"
-        Type.[int64; list page_aligned_buffer]
+        Type.[int64; list cstruct]
         Type.(lwt (result unit write_error))
-        B.(write b)
+        B.(write b);
+
+      (* cstruct *)
+      primitive "Cstruct.to_string" [cstruct] Type.string Cstruct.to_string;
+      primitive "Cstruct.of_string" [Type.string] cstruct Cstruct.of_string;
+      primitive "Cstruct.blit" Type.[cstruct; int; cstruct; int; int] Type.unit
+        Cstruct.blit;
+      primitive "Cstruct.blit_to_string" Type.[cstruct; int; string; int; int]
+        Type.unit Cstruct.blit_to_string;
+      primitive "Cstruct.blit_from_string" Type.[string; int; cstruct; int; int]
+        Type.unit Cstruct.blit_from_string;
     ]
 
   let eval b s =

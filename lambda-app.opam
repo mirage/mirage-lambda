@@ -10,7 +10,7 @@ build: [ "jbuilder" "build" "-p" name "-j" jobs ]
 depends: [
   "jbuilder" {build}
   "mirage"
-  "lambda-lambda"
+  "lambda"
   "mirage-runtime"
   "mirage-block-lwt"
   "mirage-stack-lwt"

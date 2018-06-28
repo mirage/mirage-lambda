@@ -48,7 +48,7 @@ module Main (B: BLOCK) (S: TCP) = struct
       primitive "Cstruct.blit" Type.[cstruct; int; cstruct; int; int] Type.unit
         Cstruct.blit;
       primitive "Cstruct.blit_to_string" Type.[cstruct; int; string; int; int]
-        Type.unit Cstruct.blit_to_string;
+        Type.unit (fun x y z -> Cstruct.blit_to_string x y (Bytes.unsafe_of_string z)) ;
       primitive "Cstruct.blit_from_string" Type.[string; int; cstruct; int; int]
         Type.unit Cstruct.blit_from_string;
     ]

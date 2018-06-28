@@ -11,3 +11,6 @@ test:
 
 block:
 	dd if=/dev/zero of=disk.img count=1024
+
+docker:
+	docker build -t samoht/mirage-lambda .

@@ -33,6 +33,7 @@ type _ t =
   | Int64   : int64 t
   | Bool    : bool t
   | String  : string t
+  | Bytes   : bytes t
   | Lwt     : lwt t
   | List    : 'a t -> 'a list t
   | Array   : 'a t -> 'a array t
@@ -52,6 +53,7 @@ let rec equal: type a b. a t -> b t -> (a, b) Eq.refl option = fun a b ->
   | Int64 , Int64  -> Some Eq.Refl
   | Bool  , Bool   -> Some Eq.Refl
   | String, String -> Some Eq.Refl
+  | Bytes , Bytes  -> Some Eq.Refl
   | Lwt   , Lwt    -> Some Eq.Refl
   | List a  , List b   ->
     (match equal a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
@@ -77,3 +79,4 @@ let rec equal: type a b. a t -> b t -> (a, b) Eq.refl option = fun a b ->
   | Apply _, _ -> None | Int32, _ -> None | Int64, _ -> None
   | List _, _ -> None | Array _, _ -> None | Option _, _ -> None
   | Result _, _ -> None
+  | Bytes, _ -> None

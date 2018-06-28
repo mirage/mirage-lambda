@@ -42,6 +42,7 @@ module Type: sig
   val int64: int64 t
   val bool: bool t
   val string: string t
+  val bytes: bytes t
 
   val list: 'a t -> 'a list t
   val option: 'a t -> 'a option t

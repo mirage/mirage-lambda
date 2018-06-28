@@ -36,6 +36,7 @@ module Type = struct
     | Int64         -> Fmt.pf ppf "int64"
     | Bool          -> Fmt.pf ppf "bool"
     | String        -> Fmt.pf ppf "string"
+    | Bytes         -> Fmt.pf ppf "bytes"
     | Lwt           -> Fmt.pf ppf "Lwt.t"
     | List a        -> Fmt.pf ppf "%a list" pp a
     | Option a      -> Fmt.pf ppf "%a option" pp a
@@ -52,6 +53,7 @@ module Type = struct
   let int64 = Int64
   let bool = Bool
   let string = String
+  let bytes = Bytes
   let list a = List a
   let option a = Option a
   let array a = Array a
@@ -80,6 +82,7 @@ module Type = struct
     | Int64         -> P.int64
     | Bool          -> P.bool
     | String        -> P.string
+    | Bytes         -> P.bytes
     | Lwt           -> P.lwt
     | List a        -> P.list (untype a)
     | Option a      -> P.option (untype a)
@@ -102,6 +105,7 @@ module Type = struct
     | Int64  -> V Int64
     | Bool   -> V Bool
     | String -> V String
+    | Bytes  -> V Bytes
     | Lwt    -> V Lwt
     | List a ->
       let V a = typ a in
@@ -134,6 +138,8 @@ module Type = struct
       let V b = typ b in
       V (Result (a, b))
 
+  let pp_bytes ppf x = Fmt.string ppf (Bytes.unsafe_to_string x)
+
   let rec pp_val: type a. a t -> a Fmt.t = fun t ppf x ->
     match t with
     | Unit          -> Fmt.string ppf "()"
@@ -142,6 +148,7 @@ module Type = struct
     | Int64         -> Fmt.int64 ppf x
     | Bool          -> Fmt.bool ppf x
     | String        -> Fmt.string ppf x
+    | Bytes         -> pp_bytes ppf x
     | Lwt           -> Fmt.string ppf "<promise>"
     | List a        -> Fmt.Dump.list (pp_val a) ppf x
     | Option a      -> Fmt.Dump.option (pp_val a) ppf x
@@ -163,6 +170,7 @@ module Type = struct
     | Int64 -> Int64.equal a b
     | Bool -> (=) a b
     | String -> String.equal a b
+    | Bytes  -> Bytes.equal a b
     | List t ->
       (try List.for_all2 (eq_val t) a b
        with Invalid_argument _ -> false)

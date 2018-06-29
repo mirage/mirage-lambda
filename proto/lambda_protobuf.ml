@@ -1,5 +1,6 @@
 module Types = Lambda_types
 module Pb = Lambda_pb
+module Rpc = Lambda_rpc
 
 open Lambda.Parsetree
 

@@ -69,6 +69,10 @@ module Type = struct
     let wit = Eq.Witness.v () in
     Abstract {name; wit}
 
+  let abstract_projection = function
+    | Abstract { name; wit; } -> Parsetree.Type.A {Eq.name;wit;}
+    | _ -> Fmt.invalid_arg "Type.abstract_projection: expected abstract type"
+
   let ( @->) = arrow
   let ( ** ) = pair
   let ( || ) = either

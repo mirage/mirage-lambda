@@ -34,6 +34,8 @@ module Type: sig
   val untype: 'a t -> Parsetree.typ
   (** [untype t] un-types [t] to a {!Parsetree.typ} value. *)
 
+  val abstract_projection: 'a t -> Parsetree.Type.abstract
+
   (** {2 Constructors.} *)
 
   val unit: unit t

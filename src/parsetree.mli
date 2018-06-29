@@ -19,7 +19,7 @@
 
 module Type: sig
 
-  type abstract = private A: 'a Eq.witness -> abstract
+  type abstract = A: 'a Eq.witness -> abstract
 
   type t = private
     | Unit
@@ -157,6 +157,7 @@ and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
 
 val pp: expr Fmt.t
 val to_string: expr -> string
+val equal_typ: typ eq
 val equal: expr eq
 val dump: expr Fmt.t
 

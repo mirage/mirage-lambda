@@ -201,3 +201,8 @@ message Expr {
         Bnd bnd = 16;
     }
 }
+
+message Request {
+  required Expr expr = 1;
+  required Type typ = 2;
+}

@@ -230,3 +230,10 @@ let expr_from
       | Types.If { a; b; s; } ->
         if_ (go s) (go a) (go b) in
     go
+
+let request
+  : ?gamma:Type.abstract Gamma.t ->
+    ?primitives:primitive Primitives.t ->
+    Types.request -> expr * Type.t
+  = fun ?gamma ?primitives request ->
+    expr_from ?gamma ?primitives request.Types.expr, typ_from ?gamma request.Types.typ

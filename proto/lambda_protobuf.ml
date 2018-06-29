@@ -154,7 +154,7 @@ module Option = struct let map f = function Some v -> Some (f v) | None -> None 
 
 let expr_from
   : ?gamma:Type.abstract Gamma.t ->
-    ?primitives:(value list -> value) Primitives.t ->
+    ?primitives:primitive Primitives.t ->
     Types.expr -> expr
   = fun ?gamma ?(primitives = Primitives.empty) ->
     let rec go : Types.expr -> expr = function
@@ -171,13 +171,14 @@ let expr_from
       | Types.Prm { value = { name
                             ; arguments
                             ; return } } ->
-        (try
-           primitive
-             name
-             (List.map (typ_from ?gamma) arguments)
-             (typ_from ?gamma return)
-             (Primitives.find name primitives)
-         with Not_found -> Fmt.invalid_arg "Primitive %s not found" name)
+        (match Primitives.find name primitives with
+         | primitive ->
+           if String.equal primitive.name name
+           && List.for_all2 equal_typ (List.map (typ_from ?gamma) arguments) primitive.args
+           && equal_typ (typ_from ?gamma return) primitive.ret
+           then prim primitive
+           else Fmt.invalid_arg "Remote primitive %s mismatch with local primitive" name
+         | exception Not_found -> Fmt.invalid_arg "Primitive %s not found" name)
       | Types.Lst { typ; expr; } ->
         list ?typ:(Option.map (typ_from ?gamma) typ) (List.map go expr)
       | Types.Arr { typ; expr; } ->

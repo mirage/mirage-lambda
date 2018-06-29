@@ -47,10 +47,10 @@ module Main (B: BLOCK) (S: TCP) = struct
       primitive "Cstruct.of_string" [Type.string] cstruct Cstruct.of_string;
       primitive "Cstruct.blit" Type.[cstruct; int; cstruct; int; int] Type.unit
         Cstruct.blit;
-      primitive "Cstruct.blit_to_string" Type.[cstruct; int; string; int; int]
-        Type.unit Cstruct.blit_to_string;
-      primitive "Cstruct.blit_from_string" Type.[string; int; cstruct; int; int]
-        Type.unit Cstruct.blit_from_string;
+      primitive "Cstruct.blit_to_string" Type.[cstruct; int; bytes; int; int]
+        Type.unit Cstruct.blit_to_bytes;
+      primitive "Cstruct.blit_from_string" Type.[bytes; int; cstruct; int; int]
+        Type.unit Cstruct.blit_from_bytes;
     ]
 
   let eval b s =

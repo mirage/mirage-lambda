@@ -14,6 +14,7 @@ let typ_from ?(gamma = Gamma.empty) =
     | Types.Int64 -> Type.int64
     | Types.Bool -> Type.bool
     | Types.String -> Type.string
+    | Types.Bytes -> Type.bytes
     | Types.Lwt -> Type.lwt
     | Types.List { value; } -> Type.list (go value)
     | Types.Array { value; } -> Type.array (go value)

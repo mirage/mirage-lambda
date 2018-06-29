@@ -34,6 +34,8 @@ module Type: sig
     (** Bool type. *)
     | String
     (** String type. *)
+    | Bytes
+    (** Bytes type. *)
     | Lwt
     (** Lwt constructor. *)
     | List of t
@@ -63,6 +65,7 @@ module Type: sig
   val int64: t
   val bool: t
   val string: t
+  val bytes: t
   val lwt: t
 
   val list: t -> t

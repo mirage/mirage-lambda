@@ -313,9 +313,9 @@ module Encoder = struct
      @@ fun _src _dst t -> Cont { t with state = Protobuf { consumed = 0 } })
       src dst t
 
-  let default ?(len = 0x8000) expr block_size block_n =
+  let default ?(len = 0x8000) request block_size block_n =
     let encoder = Pbrt.Encoder.create () in
-    Lambda_pb.encode_expr expr encoder;
+    Lambda_pb.encode_request request encoder;
     let p_tmp = Pbrt.Encoder.to_bytes encoder |> Bytes.unsafe_to_string in
     { i_off = 0
     ; i_pos = 0

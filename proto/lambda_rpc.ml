@@ -38,10 +38,35 @@ module Decoder = struct
     | Ok of t
   and kind = [ `Protobuf | `Block of int64 ]
 
+  let pp_kind ppf = function
+    | `Protobuf -> Fmt.string ppf "`Protobuf"
+    | `Block n -> Fmt.pf ppf "(`Block %Ld)" n
+
+  let pp_state ppf = function
+    | Header _ -> Fmt.pf ppf "(Header #fun)"
+    | Raw { kind; consumed; } -> Fmt.pf ppf "(Raw { @[<hov>kind = %a;@ consumed = %Ld;@] })" pp_kind kind consumed
+    | Stp { kind; consumed; _ } -> Fmt.pf ppf "(Stp { @[<hov>kind = %a;@ consumed = %Ld;@] })" pp_kind kind consumed
+    | Exception err -> Fmt.pf ppf "(Exception %a)" pp_error err
+    | End -> Fmt.string ppf "End"
+
+  let pp ppf t =
+    Fmt.pf ppf "{ @[<hov>i_off = %d;@ \
+                         i_pos = %d;@ \
+                         i_len = %d;@ \
+                         proto_size = %Ld;@ \
+                         block_size = %Ld;@ \
+                         block_n = %Ld;@ \
+                         i_tmp = #buf;@ \
+                         state = %a;@] }"
+      t.i_off t.i_pos t.i_len
+      t.proto_size t.block_size t.block_n
+      pp_state t.state
+
   let await t = Wait t
   let error t err = Error ({ t with state = Exception err }, err)
   let ok t = Ok { t with state = End }
-  let flush t kind consumed buf = Flush ({ t with state = Stp { kind; consumed; buf; }}, kind, buf)
+  let flush t kind consumed buf =
+    Flush ({ t with state = Stp { kind; consumed; buf; }}, kind, buf)
 
   let rec get_byte ~ctor k src t =
     if (t.i_len - t.i_pos) > 0
@@ -139,7 +164,9 @@ module Decoder = struct
            ; block_n = 0L
            ; state = Header header }
 
-  let eval0 src t = match t.state with
+  let eval0 src t =
+
+    match t.state with
     | Header k -> k src t
     | Raw { kind = `Protobuf; consumed; } -> proto src t consumed
     | Raw { kind = (`Block n); consumed; } -> block src t n consumed
@@ -204,6 +231,7 @@ module Encoder = struct
   let ok t = Ok { t with state = End }
   let await t = Wait t
   let flush t = Flush t
+  let error t err = Error ({ t with state = Exception err }, err)
 
   let rec put_byte ~ctor byte k src dst t =
     if (t.o_len - t.o_pos) > 0
@@ -301,4 +329,34 @@ module Encoder = struct
     ; p_tmp
     ; o_tmp = Cstruct.create len
     ; state = Header header }
+
+  let eval0 src dst t =
+    match t.state with
+    | Header k -> k src dst t
+    | Protobuf { consumed } -> proto src dst t consumed
+    | Block { n; consumed; } -> block src dst t n consumed
+    | Exception err -> error t err
+    | End -> ok t
+
+  let eval src dst t =
+    let rec loop t = match eval0 src dst t with
+      | Wait t -> `Await t
+      | Flush t -> `Flush t
+      | Cont t -> loop t
+      | Error (t, err) -> `Error (t, err)
+      | Ok t -> `End t in
+    loop t
+
+  let refill off len t =
+    { t with i_off = off
+           ; i_len = len
+           ; i_pos = 0 }
+
+  let flush off len t =
+    { t with o_off = off
+           ; o_len = len
+           ; o_pos = 0 }
+
+  let used_out t = t.o_pos
+  let used_in t = t.i_pos
 end

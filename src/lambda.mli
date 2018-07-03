@@ -23,6 +23,7 @@ module Eq = Eq
 module Type = Typedtree.Type
 module Var = Typedtree.Var
 module Expr = Typedtree.Expr
+module Value = Value
 
 type 'a typ = 'a Typedtree.typ
 type expr = Typedtree.expr
@@ -89,6 +90,7 @@ val eval: expr -> value
 val cast: value -> 'a typ -> 'a option
 (** [cast v typ] unwraps value [v] and proves type of it is equivalent to [ty].
    *)
+val uncast: 'a typ -> 'a -> Parsetree.value
 
 val type_and_eval: Parsetree.expr -> 'a typ -> ('a, error) result
 (** [type_and_eval unsafe_expr ty] tries to type [unsafe_expr] to [ty], evals it

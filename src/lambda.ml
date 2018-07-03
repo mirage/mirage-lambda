@@ -74,6 +74,7 @@ module Fuzzer = Fuzzer
 module Type = Typedtree.Type
 module Var = Typedtree.Var
 module Expr = Typedtree.Expr
+module Value = Value
 
 let typ = Expr.typ
 
@@ -105,6 +106,8 @@ let cast: type a. value -> a typ -> a option = fun v t' ->
   match Type.equal t t' with
   | Some Eq.Refl -> Some v
   | None         -> None
+
+let uncast: type a. a typ -> a -> Parsetree.value = fun t v -> Typedtree.Value.untype t v
 
 let type_and_eval:
   type a. Parsetree.expr -> a typ -> (a, error) result = fun m t' ->

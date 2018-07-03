@@ -107,58 +107,82 @@ module Main (B: BLOCK) (S: TCP) = struct
       Log.err (fun l -> l "Got %a, closing" S.TCPV4.pp_write_error e);
       S.TCPV4.close flow
 
+  let process ~gamma ~primitives flow =
+    let dst, dst_port = S.TCPV4.dst flow in
+
+    Logs.info (fun f ->
+        f "new tcp connection from IP %a on port %d"
+          Ipaddr.V4.pp_hum dst dst_port);
+
+    let (>>?) = bind_err flow in
+    let buffer = Buffer.create 512 in
+    let decoder = Lambda_protobuf.Rpc.Decoder.default () in
+
+    let rec loop decoder =
+      S.TCPV4.read flow >>= function
+      | Ok `Eof ->
+        Logs.info (fun f -> f "Closing connection!");
+        Lwt.return_unit
+      | Error e ->
+        Logs.warn (fun f ->
+            f "Error reading data from established connection: %a"
+              S.TCPV4.pp_error e);
+        Lwt.return_unit
+      | Ok (`Data src) ->
+        Logs.info (fun l -> l "We receive something.");
+
+        let rec go decoder =
+          Logs.info (fun l -> l "Loop back on the un-serialization.");
+
+          match Lambda_protobuf.Rpc.Decoder.eval src decoder with
+          | `Await decoder ->
+            Logs.info (fun l -> l "Await more input.");
+            decoder
+          | `Flush (decoder, `Protobuf, raw) ->
+            Logs.info (fun l -> l "Flush protobuf request.");
+            Buffer.add_string buffer (Cstruct.to_string raw);
+            go (Lambda_protobuf.Rpc.Decoder.flush decoder)
+          | `Flush (decoder, `Block n, raw) ->
+            Logs.info (fun l -> l "Flush block %Ld." n);
+            go (Lambda_protobuf.Rpc.Decoder.flush decoder)
+          | `Error (decoder, err) ->
+            Logs.info (fun l -> l "Retrieve an error: %a." Lambda_protobuf.Rpc.Decoder.pp_error err);
+            (Lambda_protobuf.Rpc.Decoder.reset decoder)
+          | `End decoder ->
+            Logs.info (fun l -> l "Receive a complete request.");
+
+            let request = Buffer.contents buffer in
+            let request = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string request) in
+            let request = Lambda_protobuf.Pb.decode_request request in
+            let ast, typ = Lambda_protobuf.request ~gamma ~primitives request in
+            let Lambda.Type.V typ = Lambda.Type.typ typ in
+
+            let res = match Lambda.type_and_eval ast typ with
+              | Ok _ as x -> x
+              | Error e   -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e in
+
+            let pp_value = Lambda.Type.pp_val typ in
+
+            Logs.info (fun l -> l "Process and eval: %a => %a.\n%!"
+                       Lambda.Parsetree.pp ast (Fmt.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
+
+            Buffer.clear buffer;
+            (Lambda_protobuf.Rpc.Decoder.reset decoder) in
+
+        Logs.info (fun l -> l "Start to un-serialize request.");
+
+        let decoder = go (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder) in
+
+        Logs.info (fun l -> l "ACKed.");
+
+        loop decoder
+    in loop decoder
+
   let start b s () =
     let primitives, gamma = make_environment b in
 
     let port = Key_gen.port () in
-    S.listen_tcpv4 s ~port (fun flow ->
-        let dst, dst_port = S.TCPV4.dst flow in
-        Logs.info (fun f ->
-            f "new tcp connection from IP %a on port %d"
-              Ipaddr.V4.pp_hum dst dst_port);
-        let (>>?) = bind_err flow in
-        let buffer = Buffer.create 512 in
-        let decoder = Lambda_protobuf.Rpc.Decoder.default () in
-        let rec loop decoder =
-          S.TCPV4.write flow (Cstruct.of_string prompt) >>? fun () ->
-          S.TCPV4.read flow >>= function
-          | Ok `Eof ->
-            Logs.info (fun f -> f "Closing connection!");
-            Lwt.return_unit
-          | Error e ->
-            Logs.warn (fun f ->
-                f "Error reading data from established connection: %a"
-                  S.TCPV4.pp_error e);
-            Lwt.return_unit
-          | Ok (`Data src) ->
-            let rec go decoder = match Lambda_protobuf.Rpc.Decoder.eval src decoder with
-              | `Await decoder -> decoder
-              | `Flush (decoder, `Protobuf, raw) ->
-                Buffer.add_string buffer (Cstruct.to_string raw);
-                go (Lambda_protobuf.Rpc.Decoder.flush decoder)
-              | `Flush (decoder, `Block n, raw) ->
-                go (Lambda_protobuf.Rpc.Decoder.flush decoder)
-              | `Error (decoder, err) ->
-                Logs.err (fun l -> l "retrieve an error: %a" Lambda_protobuf.Rpc.Decoder.pp_error err);
-                (Lambda_protobuf.Rpc.Decoder.reset decoder)
-              | `End decoder ->
-                let request = Buffer.contents buffer in
-                let request = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string request) in
-                let request = Lambda_protobuf.Pb.decode_request request in
-                let ast, typ = Lambda_protobuf.request ~gamma ~primitives request in
-                let typ = Lambda.Type.typ typ in
-
-                let res = match Lambda.type_and_eval ast Lambda.Type.int with
-                 | Ok _ as x -> x
-                 | Error e   -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e in
-
-                Buffer.clear buffer;
-                (Lambda_protobuf.Rpc.Decoder.reset decoder) in
-            let decoder = go (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder) in
-            Logs.debug (fun f -> f "read: %d bytes:\n%s" (Cstruct.len src) (Cstruct.to_string src));
-            let msg = Cstruct.of_string "ack" in
-            S.TCPV4.write flow msg >>? fun () -> loop decoder
-        in loop decoder);
+    S.listen_tcpv4 s ~port (process ~gamma ~primitives);
     S.listen s
 
 end

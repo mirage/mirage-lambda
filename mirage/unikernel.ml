@@ -10,60 +10,6 @@ module Log = (val Logs.src_log log_src : Logs.LOG)
 
 module Main (B: BLOCK) (S: TCP) = struct
 
-  let primitives b =
-    (* XXX(samoht): we need support for more basic types *)
-    let open Lambda in
-    let cstruct = Type.abstract "Cstruct.t" in
-    let error = Type.abstract "Block.error" in
-    let write_error = Type.abstract "Block.write_error" in
-    let formatter = Type.abstract "Format.formatter" in
-    (* XXX(samoht): add first-class support for records *)
-    let info = Type.abstract "Mirage_block.info" in
-    [
-      primitive "Block.pp_error" [formatter; error] Type.unit B.pp_error;
-      primitive "Block.pp_write_error"
-        [formatter; write_error] Type.unit B.pp_write_error;
-      L.primitive "Block.disconnect" [] Type.(lwt unit) B.(disconnect b);
-
-      (* info *)
-      L.primitive "Block.get_info" [] Type.(lwt info) B.(get_info b);
-      primitive "read_write" [info] Type.bool
-        (fun b -> b.Mirage_block.read_write);
-      primitive "sector_size" [info] Type.int
-        (fun b -> b.Mirage_block.sector_size);
-      primitive "size_sectores" [info] Type.int64
-        (fun b -> b.Mirage_block.size_sectors);
-
-      L.primitive "Block.read"
-        Type.[int64; list cstruct]
-        Type.(lwt (result unit error))
-        B.(read b);
-      L.primitive "Block.write"
-        Type.[int64; list cstruct]
-        Type.(lwt (result unit write_error))
-        B.(write b);
-
-      (* cstruct *)
-      primitive "Cstruct.to_string" [cstruct] Type.string Cstruct.to_string;
-      primitive "Cstruct.of_string" [Type.string] cstruct Cstruct.of_string;
-      primitive "Cstruct.blit" Type.[cstruct; int; cstruct; int; int] Type.unit
-        Cstruct.blit;
-      primitive "Cstruct.blit_to_string" Type.[cstruct; int; bytes; int; int]
-        Type.unit Cstruct.blit_to_bytes;
-      primitive "Cstruct.blit_from_string" Type.[bytes; int; cstruct; int; int]
-        Type.unit Cstruct.blit_from_bytes;
-    ]
-
-  let eval b s =
-    match Lambda.parse ~primitives:(primitives b) s with
-    | Error _ as e -> e
-    | Ok ast ->
-      match Lambda.type_and_eval ast Lambda.Type.int with
-      | Ok _ as x -> x
-      | Error e   -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e
-
-  let prompt = "# "
-
   let make_environment b =
     let open Lambda_protobuf in
     let cstruct     = Lambda.Type.abstract "Cstruct.t"         in
@@ -107,6 +53,26 @@ module Main (B: BLOCK) (S: TCP) = struct
       Log.err (fun l -> l "Got %a, closing" S.TCPV4.pp_write_error e);
       S.TCPV4.close flow
 
+  let eval ~gamma ~primitives request =
+    try
+      let request = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string request) in
+      let request = Lambda_protobuf.Pb.decode_request request in
+      let ast, typ = Lambda_protobuf.request ~gamma ~primitives request in
+      let Lambda.Type.V typ = Lambda.Type.typ typ in
+
+      let res = match Lambda.type_and_eval ast typ with
+        | Ok _ as x -> x
+        | Error e -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e in
+
+      let pp_value = Lambda.Type.pp_val typ in
+
+      Logs.info (fun l -> l "Process and eval: %a => %a.\n%!"
+                    Lambda.Parsetree.pp ast (Fmt.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
+      Ok ()
+    with exn ->
+      Logs.err (fun l -> l "Retrieve an error: %s" (Printexc.to_string exn));
+      Error (`Msg (Printexc.to_string exn))
+
   let process ~gamma ~primitives flow =
     let dst, dst_port = S.TCPV4.dst flow in
 
@@ -136,45 +102,24 @@ module Main (B: BLOCK) (S: TCP) = struct
 
           match Lambda_protobuf.Rpc.Decoder.eval src decoder with
           | `Await decoder ->
-            Logs.info (fun l -> l "Await more input.");
+            Logs.debug (fun l -> l "Await more input.");
             decoder
           | `Flush (decoder, `Protobuf, raw) ->
-            Logs.info (fun l -> l "Flush protobuf request.");
+            Logs.debug (fun l -> l "Flush protobuf request.");
             Buffer.add_string buffer (Cstruct.to_string raw);
             go (Lambda_protobuf.Rpc.Decoder.flush decoder)
           | `Flush (decoder, `Block n, raw) ->
-            Logs.info (fun l -> l "Flush block %Ld." n);
+            Logs.debug (fun l -> l "Flush block %Ld." n);
             go (Lambda_protobuf.Rpc.Decoder.flush decoder)
           | `Error (decoder, err) ->
-            Logs.info (fun l -> l "Retrieve an error: %a." Lambda_protobuf.Rpc.Decoder.pp_error err);
+            Logs.debug (fun l -> l "Retrieve an error: %a." Lambda_protobuf.Rpc.Decoder.pp_error err);
             (Lambda_protobuf.Rpc.Decoder.reset decoder)
           | `End decoder ->
-            Logs.info (fun l -> l "Receive a complete request.");
-
-            let request = Buffer.contents buffer in
-            let request = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string request) in
-            let request = Lambda_protobuf.Pb.decode_request request in
-            let ast, typ = Lambda_protobuf.request ~gamma ~primitives request in
-            let Lambda.Type.V typ = Lambda.Type.typ typ in
-
-            let res = match Lambda.type_and_eval ast typ with
-              | Ok _ as x -> x
-              | Error e   -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e in
-
-            let pp_value = Lambda.Type.pp_val typ in
-
-            Logs.info (fun l -> l "Process and eval: %a => %a.\n%!"
-                       Lambda.Parsetree.pp ast (Fmt.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
-
+            eval ~gamma ~primitives (Buffer.contents buffer) |> fun res ->
             Buffer.clear buffer;
             (Lambda_protobuf.Rpc.Decoder.reset decoder) in
 
-        Logs.info (fun l -> l "Start to un-serialize request.");
-
         let decoder = go (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder) in
-
-        Logs.info (fun l -> l "ACKed.");
-
         loop decoder
     in loop decoder
 

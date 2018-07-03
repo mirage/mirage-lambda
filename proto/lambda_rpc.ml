@@ -107,7 +107,7 @@ module Decoder = struct
                                   ; consumed
                                   ; buf = Cstruct.sub t.i_tmp 0 (Int64.to_int consumed) } }
     else
-      let len = min (Cstruct.len t.i_tmp) (t.i_pos - t.i_len) in
+      let len = min (Cstruct.len t.i_tmp) (t.i_len - t.i_pos) in
       Cstruct.blit src (t.i_off + t.i_pos) t.i_tmp 0 len;
       flush { t with i_pos = t.i_pos + len } `Protobuf Int64.(consumed + (of_int len)) (Cstruct.sub t.i_tmp 0 len)
 

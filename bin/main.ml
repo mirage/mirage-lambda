@@ -17,6 +17,7 @@ let request ?(primitives = []) s =
     Ok encoder
 
 let make_socket addr port =
+  Printf.printf "Connecting to %s:%d\n$!" addr port;
   let inet_addr = Unix.(gethostbyname addr).h_addr_list.(0) in
   let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
   Unix.connect socket Unix.(ADDR_INET (inet_addr, port));
@@ -58,5 +59,5 @@ let repl socket =
     | exception End_of_file -> () in go ()
 
 let () =
-  let oc, _ = make_socket "localhost" 4242 in
+  let oc, _ = make_socket "localhost" 1234 in
   repl oc

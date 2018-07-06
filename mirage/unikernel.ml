@@ -43,7 +43,7 @@ module Main (B: BLOCK) (S: TCP) = struct
       [ "Format.formatter",  Lambda.Type.abstract_projection formatter
       ; "Block.error",       Lambda.Type.abstract_projection error
       ; "Cstruct.t",         Lambda.Type.abstract_projection cstruct
-      ; "Block.get_info",    Lambda.Type.abstract_projection info
+      ; "Mirage_block.info", Lambda.Type.abstract_projection info
       ; "Block.write_error", Lambda.Type.abstract_projection write_error ]
 
   let bind_err flow x f =

@@ -13,11 +13,11 @@ let request ?(primitives = []) s =
   | Ok v ->
     let (ast, typ) = v in
     Fmt.(pf stdout) "Ready to send: %a:%a.\n%!" Lambda.Parsetree.pp ast Lambda.Parsetree.Type.pp typ;
-    let encoder = Lambda_protobuf.Rpc.Encoder.default (Lambda_protobuf.make v) 0L 0L in
+    let encoder = Lambda_protobuf.Rpc.Encoder.default (Lambda_protobuf.make v) 1L 1L in
     Ok encoder
 
 let make_socket addr port =
-  Printf.printf "Connecting to %s:%d\n$!" addr port;
+  Printf.printf "Connecting to %s:%d\n%!" addr port;
   let inet_addr = Unix.(gethostbyname addr).h_addr_list.(0) in
   let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
   Unix.connect socket Unix.(ADDR_INET (inet_addr, port));
@@ -26,11 +26,15 @@ let make_socket addr port =
 let send_request oc encoder =
   let open Lambda_protobuf in
 
-  let src = Cstruct.create 0 in
+  let src = Cstruct.of_string  "\042" in
   let dst = Cstruct.create 0x8000 in
 
-  let rec go encoder = match Rpc.Encoder.eval src dst encoder with
-    | `Await _ -> assert false
+  let rec go encoder =
+    Format.printf "Evaluation of: %a.\n%!" Rpc.Encoder.pp encoder;
+
+    match Rpc.Encoder.eval src dst encoder with
+    | `Await t ->
+      go (Rpc.Encoder.refill 0 1 t)
     | `Flush t ->
       let chunk = Cstruct.to_string dst in
       output_substring oc chunk 0 (Rpc.Encoder.used_out t);

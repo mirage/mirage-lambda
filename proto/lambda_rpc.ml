@@ -6,6 +6,7 @@ module Int64 = struct
   let of_int = Int64.of_int
   let to_int = Int64.to_int
   let ( + ) = Int64.add
+  let ( - ) = Int64.sub
   let succ = Int64.succ
 end
 
@@ -120,6 +121,7 @@ module Decoder = struct
                                   ; buf = Cstruct.sub t.i_tmp 0 (Int64.to_int consumed) } }
     else
       let len = min (Cstruct.len t.i_tmp) (t.i_pos - t.i_len) in
+      let len = min len Int64.(to_int (t.block_size - consumed)) in
       Cstruct.blit src (t.i_off + t.i_pos) t.i_tmp 0 len;
       flush { t with i_pos = t.i_pos + len } (`Block n) Int64.(consumed + (of_int len)) (Cstruct.sub t.i_tmp 0 len)
 
@@ -133,6 +135,7 @@ module Decoder = struct
                                   ; buf = Cstruct.sub t.i_tmp 0 (Int64.to_int consumed) } }
     else
       let len = min (Cstruct.len t.i_tmp) (t.i_len - t.i_pos) in
+      let len = min len Int64.(to_int (t.proto_size - consumed)) in
       Cstruct.blit src (t.i_off + t.i_pos) t.i_tmp 0 len;
       flush { t with i_pos = t.i_pos + len } `Protobuf Int64.(consumed + (of_int len)) (Cstruct.sub t.i_tmp 0 len)
 
@@ -228,6 +231,31 @@ module Encoder = struct
     | Ok of t
     | Error of t * error
 
+  let pp_state ppf = function
+    | Header _ -> Fmt.pf ppf "(Header #k)"
+    | Protobuf { consumed; } -> Fmt.pf ppf "(Protobuf { @[<hov>consumed = %d;@] })" consumed
+    | Block { n; consumed; } -> Fmt.pf ppf "(Block { @[<hov>n = %Ld;@ consumed = %d;@] })" n consumed
+    | Exception err -> Fmt.pf ppf "(Exception %a)" pp_error err
+    | End -> Fmt.string ppf "End"
+
+  let pp ppf t =
+    Fmt.pf ppf "{ @[<hov>o_off = %d;@ \
+                         o_pos = %d;@ \
+                         o_len = %d;@ \
+                         i_off = %d;@ \
+                         i_pos = %d;@ \
+                         i_len = %d;@ \
+                         proto_size = %Ld;@ \
+                         block_size = %Ld;@ \
+                         block_n = %Ld;@ \
+                         p_tmp = #buffer;@ \
+                         o_tmp = #buffer;@ \
+                         state = %a;@] }"
+      t.o_off t.o_pos t.o_len
+      t.i_off t.i_pos t.i_len
+      t.proto_size t.block_size t.block_n
+      pp_state t.state
+
   let ok t = Ok { t with state = End }
   let await t = Wait t
   let flush t = Flush t
@@ -282,15 +310,20 @@ module Encoder = struct
                          else Block { n = Int64.succ n; consumed = 0 } }
     else begin
       let len = min (t.o_len - t.o_pos) (t.i_len - t.i_pos) in
+      let len = min len (Int64.to_int t.block_size - consumed) in
       Cstruct.blit src (t.i_off + t.i_pos) dst (t.o_off + t.o_pos) len;
 
       match (t.i_len - (t.i_pos + len)) > 0, (t.o_len - (t.o_pos + len)) > 0 with
       | true, true
       | true, false -> flush { t with i_pos = t.i_pos + len
-                                    ; o_pos = t.o_pos + len }
+                                    ; o_pos = t.o_pos + len
+                                    ; state = Block { n; consumed = consumed + len; } }
       | false, true -> await { t with i_pos = t.i_pos + len
-                                    ; o_pos = t.o_pos + len }
-      | false, false -> assert false (* XXX(dinosaure): impossible. *)
+                                    ; o_pos = t.o_pos + len
+                                    ; state = Block { n; consumed = consumed + len; } }
+      | false, false -> flush { t with i_pos = t.i_pos + len
+                                     ; o_pos = t.o_pos + len
+                                     ; state = Block { n; consumed = consumed + len; } }
     end
 
   let proto _src dst t consumed =
@@ -301,6 +334,7 @@ module Encoder = struct
                          else Block { n = 0L; consumed = 0 } }
     else begin
       let len = min (t.o_len - t.o_pos) (String.length t.p_tmp - consumed) in
+      let len = min len (Int64.to_int t.proto_size - consumed) in
       Cstruct.blit_from_string t.p_tmp consumed dst (t.o_off + t.o_pos) len;
       flush { t with o_pos = t.o_pos + len
                    ; state = Protobuf { consumed = consumed + len } }

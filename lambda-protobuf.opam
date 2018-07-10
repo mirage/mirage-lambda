@@ -12,4 +12,5 @@ depends: [
   "ocaml-protoc"
   "lambda"
   "cstruct"
+  "rresult"
 ]

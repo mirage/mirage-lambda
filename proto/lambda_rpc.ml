@@ -113,14 +113,9 @@ module Decoder = struct
 
   let block src t n consumed =
     if consumed = t.block_size
-    then Cont { t with state =
-                         if Int64.succ n = t.block_n
-                         then End
-                         else Stp { kind = `Block n
-                                  ; consumed
-                                  ; buf = Cstruct.sub t.i_tmp 0 (Int64.to_int consumed) } }
+    then flush t (`Block n) consumed (Cstruct.sub t.i_tmp 0 0)
     else
-      let len = min (Cstruct.len t.i_tmp) (t.i_pos - t.i_len) in
+      let len = min (Cstruct.len t.i_tmp) (t.i_len - t.i_pos) in
       let len = min len Int64.(to_int (t.block_size - consumed)) in
       Cstruct.blit src (t.i_off + t.i_pos) t.i_tmp 0 len;
       flush { t with i_pos = t.i_pos + len } (`Block n) Int64.(consumed + (of_int len)) (Cstruct.sub t.i_tmp 0 len)
@@ -168,7 +163,6 @@ module Decoder = struct
            ; state = Header header }
 
   let eval0 src t =
-
     match t.state with
     | Header k -> k src t
     | Raw { kind = `Protobuf; consumed; } -> proto src t consumed
@@ -187,10 +181,14 @@ module Decoder = struct
     loop t
 
   let flush t = match t.state with
-    | Stp { kind = `Protobuf; _ } ->
-      { t with state = if t.block_n = 0L then End else Raw { kind = `Block 0L; consumed = 0L } }
-    | Stp { kind = `Block n; _ } ->
-      { t with state = if Int64.succ n = t.block_n then End else Raw { kind = `Block (Int64.succ n); consumed = 0L } }
+    | Stp { kind = `Protobuf; consumed; _ } ->
+      if consumed = t.proto_size
+      then { t with state = if t.block_n = 0L then End else Raw { kind = `Block 0L; consumed = 0L } }
+      else { t with state = Raw { kind = `Protobuf; consumed; } }
+    | Stp { kind = `Block n; consumed; _ } ->
+      if consumed = t.block_size
+      then { t with state = if Int64.succ n = t.block_n then End else Raw { kind = `Block (Int64.succ n); consumed = 0L } }
+      else { t with state = Raw { kind = `Block n; consumed; } }
     | _ -> invalid_arg "Rpc.Decoder.flush: invalid state"
 
   let refill off len t =
@@ -304,10 +302,10 @@ module Encoder = struct
 
   let block src dst t n consumed =
     if consumed = (Int64.to_int t.block_size)
-    then Cont { t with state =
-                         if Int64.succ n = t.block_n
-                         then End
-                         else Block { n = Int64.succ n; consumed = 0 } }
+    then flush { t with state =
+                          if Int64.succ n = t.block_n
+                          then End
+                          else Block { n = Int64.succ n; consumed = 0 } }
     else begin
       let len = min (t.o_len - t.o_pos) (t.i_len - t.i_pos) in
       let len = min len (Int64.to_int t.block_size - consumed) in
@@ -315,15 +313,13 @@ module Encoder = struct
 
       match (t.i_len - (t.i_pos + len)) > 0, (t.o_len - (t.o_pos + len)) > 0 with
       | true, true
+      | false, false
       | true, false -> flush { t with i_pos = t.i_pos + len
                                     ; o_pos = t.o_pos + len
                                     ; state = Block { n; consumed = consumed + len; } }
       | false, true -> await { t with i_pos = t.i_pos + len
                                     ; o_pos = t.o_pos + len
                                     ; state = Block { n; consumed = consumed + len; } }
-      | false, false -> flush { t with i_pos = t.i_pos + len
-                                     ; o_pos = t.o_pos + len
-                                     ; state = Block { n; consumed = consumed + len; } }
     end
 
   let proto _src dst t consumed =
@@ -393,4 +389,8 @@ module Encoder = struct
 
   let used_out t = t.o_pos
   let used_in t = t.i_pos
+
+  let block t = match t.state with
+    | Block { n; consumed; } -> n, consumed
+    | _ -> invalid_arg "block: invalid state"
 end

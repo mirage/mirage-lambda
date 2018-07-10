@@ -7,6 +7,7 @@ message Type {
     message Int64 { }
     message Bool { }
     message String { }
+    message Bytes { }
     message Lwt { }
     message List {
         required Type value = 1;
@@ -58,6 +59,7 @@ message Type {
         Either either = 14;
         Result result = 15;
         Abstract abstract = 16;
+        Bytes bytes = 17;
     }
 }
 
@@ -198,4 +200,9 @@ message Expr {
         Ret ret = 15;
         Bnd bnd = 16;
     }
+}
+
+message Request {
+  required Expr expr = 1;
+  required Type typ = 2;
 }

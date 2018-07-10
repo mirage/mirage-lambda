@@ -1,0 +1,5 @@
+(executable
+ ((name main)
+  (public_name lambda-client)
+  (package lambda-protobuf)
+  (libraries (cmdliner rresult lambda lambda-protobuf))))

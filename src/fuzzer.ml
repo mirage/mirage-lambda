@@ -51,6 +51,8 @@ let to_list witness l =
       | None -> map witness r a in
   map witness l []
 
+let pp_bytes ppf s = Fmt.string ppf (Bytes.unsafe_to_string s)
+
 let rec value_gen : type a. a T.t -> Parsetree.value Crowbar.gen = fun ty ->
   match ty with
   | T.Unit     -> Crowbar.const (value ty pp_unit (fun () () -> true) ())
@@ -59,6 +61,10 @@ let rec value_gen : type a. a T.t -> Parsetree.value Crowbar.gen = fun ty ->
   | T.Int64    -> Crowbar.(map [ int64 ] (value ty Fmt.int64 Int64.equal))
   | T.Bool     -> Crowbar.(map [ bool ] (value ty Fmt.bool eq_bool))
   | T.String   -> Crowbar.(map [ bytes ] (value ty Fmt.string String.equal))
+  | T.Bytes    ->
+    Crowbar.(map [ bytes ] (fun s ->
+        value ty pp_bytes Bytes.equal (Bytes.unsafe_of_string s)
+      ))
   | T.List ta  ->
     let cmp = Typedtree.Type.eq_val ty in
     Crowbar.(map [ list (value_gen ta); (value_gen ta) ]) (fun l x -> value ty Fmt.(list (pp ta x)) cmp (to_list ta l))
@@ -72,7 +78,7 @@ let rec value_gen : type a. a T.t -> Parsetree.value Crowbar.gen = fun ty ->
          let cmp = Typedtree.Type.eq_val ty in
 
          match o with
-         | true -> value ty pp cmp (Some (Typedtree.Value.cast x ta)) 
+         | true -> value ty pp cmp (Some (Typedtree.Value.cast x ta))
          | false -> value ty pp cmp None)
   | T.Pair (ta, tb) ->
     Crowbar.(map [ (value_gen ta); (value_gen tb) ])

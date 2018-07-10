@@ -11,4 +11,6 @@ depends: [
   "jbuilder" {build}
   "ocaml-protoc"
   "lambda"
+  "cstruct"
+  "rresult"
 ]

@@ -36,6 +36,7 @@ module Type = struct
     | Int64
     | Bool
     | String
+    | Bytes
     | Lwt
     | List of t
     | Array of t
@@ -58,6 +59,7 @@ module Type = struct
     | Int64         -> Fmt.string ppf "int64"
     | Bool          -> Fmt.string ppf "bool"
     | String        -> Fmt.string ppf "string"
+    | Bytes         -> Fmt.string ppf "bytes"
     | Lwt           -> Fmt.pf ppf "Lwt.t"
     | List a        -> Fmt.pf ppf "%a list" pp a
     | Array a       -> Fmt.pf ppf "%a array" pp a
@@ -75,6 +77,7 @@ module Type = struct
   let int64 = Int64
   let bool = Bool
   let string = String
+  let bytes = Bytes
   let lwt = Lwt
 
   let list a = List a

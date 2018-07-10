@@ -1,5 +1,6 @@
 module Types = Lambda_types
 module Pb = Lambda_pb
+module Rpc = Lambda_rpc
 
 open Lambda.Parsetree
 
@@ -14,6 +15,7 @@ let typ_from ?(gamma = Gamma.empty) =
     | Types.Int64 -> Type.int64
     | Types.Bool -> Type.bool
     | Types.String -> Type.string
+    | Types.Bytes -> Type.bytes
     | Types.Lwt -> Type.lwt
     | Types.List { value; } -> Type.list (go value)
     | Types.Array { value; } -> Type.array (go value)
@@ -28,6 +30,27 @@ let typ_from ?(gamma = Gamma.empty) =
       with Not_found -> Fmt.invalid_arg "Abstract type %s not found" witness
   in go
 
+let typ_to =
+  let rec go : Type.t -> Types.type_ = function
+    | Type.Unit -> Types.Unit
+    | Type.Int -> Types.Int
+    | Type.Int32 -> Types.Int32
+    | Type.Int64 -> Types.Int64
+    | Type.Bool -> Types.Bool
+    | Type.String -> Types.String
+    | Type.Bytes -> Types.Bytes
+    | Type.Lwt -> Types.Lwt
+    | Type.List t -> Types.List { value = go t }
+    | Type.Array t -> Types.Array { value = go t }
+    | Type.Option t -> Types.Option { value = go t }
+    | Type.Apply (a, b) -> Types.Apply { a = go a; b = go b; }
+    | Type.Arrow (a, b) -> Types.Arrow { a = go a; b = go b; }
+    | Type.Pair (a, b) -> Types.Pair { a = go a; b = go b; }
+    | Type.Either (a, b) -> Types.Either { a = go a; b = go b; }
+    | Type.Result (a, b) -> Types.Result { a = go a; b = go b; }
+    | Type.Abstract (Type.A witness) -> Types.Abstract { witness = witness.Lambda.Eq.name }
+  in go
+
 let binop_from : Types.binop -> binop = function
   | Types.Add -> `Add
   | Types.Sub -> `Sub
@@ -36,6 +59,14 @@ let binop_from : Types.binop -> binop = function
   | Types.Pair -> `Pair
   | Types.Eq -> `Eq
 
+let binop_to : binop -> Types.binop = function
+  | `Add -> Types.Add
+  | `Sub -> Types.Sub
+  | `Mul -> Types.Mul
+  | `Div -> Types.Div
+  | `Pair -> Types.Pair
+  | `Eq -> Types.Eq
+
 let unop_from : ?gamma:Type.abstract Gamma.t -> Types.unop -> unop = fun ?gamma -> function
   | Types.Fst -> Fst
   | Types.Snd -> Snd
@@ -43,6 +74,14 @@ let unop_from : ?gamma:Type.abstract Gamma.t -> Types.unop -> unop = fun ?gamma 
   | Types.R { value; } -> R (typ_from ?gamma value)
   | Types.Ok { value; } -> Ok (typ_from ?gamma value)
   | Types.Error { value; } -> Error (typ_from ?gamma value)
+
+let unop_to : unop -> Types.unop = function
+  | Fst -> Types.Fst
+  | Snd -> Types.Snd
+  | L t -> Types.L { value = typ_to t }
+  | R t -> Types.R { value = typ_to t }
+  | Ok t -> Types.Ok { value = typ_to t }
+  | Error t -> Types.Error { value = typ_to t }
 
 let opt_eq ~eq a b = match a, b with
   | Some a, Some b -> eq a b
@@ -150,9 +189,23 @@ let rec value_from : Types.value -> value = function
 
 module Option = struct let map f = function Some v -> Some (f v) | None -> None end
 
+let value_to : value -> Types.value = fun v ->
+  let rec go : Lambda.Value.t -> Types.value = function
+    | Lambda.Value.Unit -> Types.Unit
+    | Lambda.Value.Int value -> Types.Int { value = Int32.of_int value; }
+    | Lambda.Value.Int32 value -> Types.Int32 { value; }
+    | Lambda.Value.Int64 value -> Types.Int64 { value; }
+    | Lambda.Value.Bool value -> Types.Bool { value; }
+    | Lambda.Value.String value -> Types.String { value; }
+    | Lambda.Value.List (typ, value) -> Types.List { typ = typ_to typ; value = List.map go value; }
+    | Lambda.Value.Array (typ, value) -> Types.Array { typ = typ_to typ; value = Array.map go value |> Array.to_list; }
+    | Lambda.Value.Option (typ, value) -> Types.Option { typ = typ_to typ; value = Option.map go value; }
+    | _ -> assert false (* TODO *) in
+  go (Lambda.Value.unsafe_value v)
+
 let expr_from
   : ?gamma:Type.abstract Gamma.t ->
-    ?primitives:(value list -> value) Primitives.t ->
+    ?primitives:primitive Primitives.t ->
     Types.expr -> expr
   = fun ?gamma ?(primitives = Primitives.empty) ->
     let rec go : Types.expr -> expr = function
@@ -169,13 +222,14 @@ let expr_from
       | Types.Prm { value = { name
                             ; arguments
                             ; return } } ->
-        (try
-           primitive
-             name
-             (List.map (typ_from ?gamma) arguments)
-             (typ_from ?gamma return)
-             (Primitives.find name primitives)
-         with Not_found -> Fmt.invalid_arg "Primitive %s not found" name)
+        (match Primitives.find name primitives with
+         | primitive ->
+           if String.equal primitive.name name
+           && List.for_all2 equal_typ (List.map (typ_from ?gamma) arguments) primitive.args
+           && equal_typ (typ_from ?gamma return) primitive.ret
+           then prim primitive
+           else Fmt.invalid_arg "Remote primitive %s mismatch with local primitive" name
+         | exception Not_found -> Fmt.invalid_arg "Primitive %s not found" name)
       | Types.Lst { typ; expr; } ->
         list ?typ:(Option.map (typ_from ?gamma) typ) (List.map go expr)
       | Types.Arr { typ; expr; } ->
@@ -227,3 +281,40 @@ let expr_from
       | Types.If { a; b; s; } ->
         if_ (go s) (go a) (go b) in
     go
+
+let rec expr_to : expr -> Types.expr = function
+  | Val v -> Types.Val { value = value_to v; }
+  | Prm { name; args; ret; _ } -> Types.Prm { value = { name; arguments = List.map typ_to args; return = typ_to ret; }; }
+  | Lst (typ, lst) -> Types.Lst { typ = Option.map typ_to typ; expr = List.map expr_to lst; }
+  | Arr (typ, arr) -> Types.Arr { typ = Option.map typ_to typ; expr = Array.map expr_to arr |> Array.to_list; }
+  | Opt (Some typ, opt) -> Types.Opt { typ = typ_to typ; expr = Option.map expr_to opt; }
+  | Opt (None, _) -> invalid_arg "Optional construction needs to be typed"
+  | Ret expr -> Types.Ret { expr = expr_to expr; }
+  | Bnd (expr, func) -> Types.Bnd { expr = expr_to expr; func = expr_to func; }
+  | Var { id; } -> Types.Var { var = Int32.of_int id; }
+  | Lam (typ, var, expr) -> Types.Lam { typ = typ_to typ; var; expr = expr_to expr; }
+  | Rec { r = ret; p = (name, argument); e = expr; } ->
+    Types.Rec { ret = typ_to ret
+              ; name
+              ; argument = typ_to argument
+              ; expr = expr_to expr; }
+  | App (a, b) -> Types.App { a = expr_to a; b = expr_to b; }
+  | Bin (op, a, b) -> Types.Bin { op = binop_to op; a = expr_to a; b = expr_to b; }
+  | Uno (op, x) -> Types.Uno { op = unop_to op; x = expr_to x; }
+  | Let (typ, name, expr, body) ->
+    Types.Let { typ = typ_to typ; name; expr = expr_to expr; body = expr_to body; }
+  | Swt { a; b; s; } -> Types.Swt { a = expr_to a; b = expr_to b; s = expr_to s; }
+  | If (s, a, b) -> Types.If { a = expr_to a; b = expr_to b; s = expr_to s; }
+
+let request
+  : ?gamma:Type.abstract Gamma.t ->
+    ?primitives:primitive Primitives.t ->
+    Types.request -> expr * Type.t
+  = fun ?gamma ?primitives request ->
+    expr_from ?gamma ?primitives request.Types.expr, typ_from ?gamma request.Types.typ
+
+let make
+  : expr * Type.t -> Types.request
+  = fun (expr, typ) ->
+    { Types.expr = expr_to expr
+    ; typ = typ_to typ }

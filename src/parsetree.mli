@@ -19,7 +19,7 @@
 
 module Type: sig
 
-  type abstract = private A: 'a Eq.witness -> abstract
+  type abstract = A: 'a Eq.witness -> abstract
 
   type t = private
     | Unit
@@ -34,6 +34,8 @@ module Type: sig
     (** Bool type. *)
     | String
     (** String type. *)
+    | Bytes
+    (** Bytes type. *)
     | Lwt
     (** Lwt constructor. *)
     | List of t
@@ -63,6 +65,7 @@ module Type: sig
   val int64: t
   val bool: t
   val string: t
+  val bytes: t
   val lwt: t
 
   val list: t -> t
@@ -154,6 +157,7 @@ and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
 
 val pp: expr Fmt.t
 val to_string: expr -> string
+val equal_typ: typ eq
 val equal: expr eq
 val dump: expr Fmt.t
 

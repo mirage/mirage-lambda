@@ -23,6 +23,7 @@ module Eq = Eq
 module Type = Typedtree.Type
 module Var = Typedtree.Var
 module Expr = Typedtree.Expr
+module Value = Value
 
 type 'a typ = 'a Typedtree.typ
 type expr = Typedtree.expr
@@ -63,6 +64,18 @@ val parse:
 
 val parse_exn: ?file:string -> ?primitives:primitive list -> string -> Parsetree.expr
 
+module Request: sig
+  val parse:
+    ?file:string ->
+    ?primitives:primitive list ->
+    string -> (Parsetree.expr * Parsetree.Type.t, [`Msg of string]) result
+  (** [parse ?file ?primitives input] tries to parse [input] and binds primitives
+      with their associated names (see {!primitive}) in resulted {!Parsetree.expr}
+      expression. [?file] helps to produce a better error message. *)
+
+  val parse_exn: ?file:string -> ?primitives:primitive list -> string -> Parsetree.expr * Parsetree.Type.t
+end
+
 val typ: Parsetree.expr -> (expr, error) result
 (** [typ unsafe_expr] tries to type [unsafe_expr]. *)
 
@@ -77,6 +90,7 @@ val eval: expr -> value
 val cast: value -> 'a typ -> 'a option
 (** [cast v typ] unwraps value [v] and proves type of it is equivalent to [ty].
    *)
+val uncast: 'a typ -> 'a -> Parsetree.value
 
 val type_and_eval: Parsetree.expr -> 'a typ -> ('a, error) result
 (** [type_and_eval unsafe_expr ty] tries to type [unsafe_expr] to [ty], evals it

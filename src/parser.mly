@@ -95,12 +95,19 @@
 %type <(string * Parsetree.expr) list -> (Parsetree.expr, string) result> main
 %type <(string * Parsetree.expr) list -> string list -> Parsetree.expr> expr
 
+%start request
+%type <(string * Parsetree.expr) list -> (Parsetree.expr * Parsetree.Type.t, string) result> request
+
 %%
 
 main:
   | e=expr_seq EOF { fun prims ->
                      try Ok (e prims [])
                      with Internal s -> Error s }
+
+request:
+  | e=expr_seq COLON t=typ EOF
+    { fun prims -> try Ok (e prims [], t) with Internal s -> Error s }
 
 expr_seq:
   | e=expr %prec below_SEMI { e }

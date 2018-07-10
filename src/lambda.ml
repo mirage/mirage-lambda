@@ -47,6 +47,25 @@ let parse_exn ?file ?primitives str =
   | Ok y           -> y
   | Error (`Msg e) -> invalid_arg e
 
+module Request = struct
+  let parse ?(file="<none>") ?(primitives=[]) str =
+    let lexbuf = Lexing.from_string str in
+    let err msg =
+      let msg = Fmt.strf "%a: %s\n.%!" (pp_position file) lexbuf msg in
+      Log.err (fun l -> l "%s" msg);
+      Error (`Msg msg) in
+    match Parser.request Lexer.(token @@ v ()) lexbuf primitives with
+    | Ok _ as x                 -> x
+    | Error e                   -> err e
+    | exception Lexer.Error msg -> err msg
+    | exception Parser.Error    -> err "syntax error"
+
+  let parse_exn ?file ?primitives str =
+    match parse ?file ?primitives str with
+    | Ok y           -> y
+    | Error (`Msg e) -> invalid_arg e
+end
+
 (* Typer *)
 
 module Parsetree = Parsetree
@@ -55,6 +74,7 @@ module Fuzzer = Fuzzer
 module Type = Typedtree.Type
 module Var = Typedtree.Var
 module Expr = Typedtree.Expr
+module Value = Value
 
 let typ = Expr.typ
 
@@ -86,6 +106,8 @@ let cast: type a. value -> a typ -> a option = fun v t' ->
   match Type.equal t t' with
   | Some Eq.Refl -> Some v
   | None         -> None
+
+let uncast: type a. a typ -> a -> Parsetree.value = fun t v -> Typedtree.Value.untype t v
 
 let type_and_eval:
   type a. Parsetree.expr -> a typ -> (a, error) result = fun m t' ->

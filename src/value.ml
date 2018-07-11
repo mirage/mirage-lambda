@@ -14,8 +14,8 @@ type t =
   | Array of Parsetree.Type.t * t array
   | Option of Parsetree.Type.t * t option
   | Pair of (t * t)
-  | Either of (t, t) either
-  | Result of (t, t) result
+  | Either of (t, t) either * Parsetree.Type.t * Parsetree.Type.t
+  | Result of (t, t) result * Parsetree.Type.t * Parsetree.Type.t
 
 let option_map f = function
   | Some v -> Some (f v)
@@ -44,7 +44,7 @@ let unsafe_value : Parsetree.value -> t = fun (Parsetree.V x) ->
     | T.Array t -> Array (Typedtree.Type.untype t, Array.map (go t) value)
     | T.Option t -> Option (Typedtree.Type.untype t, option_map (go t) value)
     | T.Pair (ta, tb) -> Pair (pair_map (go ta) (go tb) value)
-    | T.Either (ta, tb) -> Either (either_map (go ta) (go tb) value)
-    | T.Result (ta, tb) -> Result (result_map (go ta) (go tb) value)
+    | T.Either (ta, tb) -> Either (either_map (go ta) (go tb) value, Typedtree.Type.untype ta, Typedtree.Type.untype tb)
+    | T.Result (ta, tb) -> Result (result_map (go ta) (go tb) value, Typedtree.Type.untype ta, Typedtree.Type.untype tb)
     | _ -> invalid_arg "Unsafe_value.unsafe_value: invalid type" in
   go x.t x.v

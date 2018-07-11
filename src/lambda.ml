@@ -29,39 +29,41 @@ let pp_position file ppf lexbuf =
     file p.Lexing.pos_lnum
     (p.Lexing.pos_cnum - p.Lexing.pos_bol)
 
-let parse ?(file="<none>") ?(primitives=[]) str =
+let parse ?(file="<none>") ?(primitives=[]) ?(gamma=[]) str =
   let lexbuf = Lexing.from_string str in
   let err msg =
     let msg = Fmt.strf "%a: %s\n.%!" (pp_position file) lexbuf msg in
     Log.err (fun l -> l "%s" msg);
-    Error (`Msg msg)
-  in
-  match Parser.main Lexer.(token @@ v ()) lexbuf primitives with
+    Error (`Msg msg) in
+  match Parser.main Lexer.(token @@ v ()) lexbuf primitives gamma with
   | Ok _ as x                 -> x
   | Error e                   -> err e
   | exception Lexer.Error msg -> err msg
   | exception Parser.Error    -> err "syntax error"
 
-let parse_exn ?file ?primitives str =
-  match parse ?file ?primitives str with
+let parse_exn ?file ?primitives ?gamma str =
+  match parse ?file ?primitives ?gamma str with
   | Ok y           -> y
   | Error (`Msg e) -> invalid_arg e
 
 module Request = struct
-  let parse ?(file="<none>") ?(primitives=[]) str =
+  let parse ?(file="<none>") ?(primitives=[]) ?(gamma=[]) str =
+    let pp ppf (Parsetree.Type.A w) = Fmt.string ppf w.Eq.name in
+    Fmt.(pf stdout) "gamma: %a.\n%!"
+      Fmt.(list (pair string pp)) gamma;
     let lexbuf = Lexing.from_string str in
     let err msg =
       let msg = Fmt.strf "%a: %s\n.%!" (pp_position file) lexbuf msg in
       Log.err (fun l -> l "%s" msg);
       Error (`Msg msg) in
-    match Parser.request Lexer.(token @@ v ()) lexbuf primitives with
+    match Parser.request Lexer.(token @@ v ()) lexbuf primitives gamma with
     | Ok _ as x                 -> x
     | Error e                   -> err e
     | exception Lexer.Error msg -> err msg
     | exception Parser.Error    -> err "syntax error"
 
-  let parse_exn ?file ?primitives str =
-    match parse ?file ?primitives str with
+  let parse_exn ?file ?primitives ?gamma str =
+    match parse ?file ?primitives ?gamma str with
     | Ok y           -> y
     | Error (`Msg e) -> invalid_arg e
 end

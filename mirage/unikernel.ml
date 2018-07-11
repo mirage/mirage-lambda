@@ -52,14 +52,19 @@ module Log = (val Logs.src_log log_src : Logs.LOG)
 
 module Main (B: BLOCK) (S: TCP) = struct
 
-  let make_environment b =
-    let open Lambda_protobuf in
-    let cstruct     = Lambda.Type.abstract "Cstruct.t"         in
-    let formatter   = Lambda.Type.abstract "Format.formatter"  in
-    let error       = Lambda.Type.abstract "Block.error"       in
-    let write_error = Lambda.Type.abstract "Block.write_error" in
-    let info        = Lambda.Type.abstract "Mirage_block.info" in
+  module AbstractTypes = struct
+    (* XXX(dinosaure): we need to define types at top-level. *)
 
+    let cstruct     = Lambda.Type.abstract "Cstruct.t"
+    let formatter   = Lambda.Type.abstract "Format.formatter"
+    let error       = Lambda.Type.abstract "Block.error"
+    let write_error = Lambda.Type.abstract "Block.write_error"
+    let info        = Lambda.Type.abstract "Mirage_block.info"
+  end
+
+  let make_environment b =
+    let open AbstractTypes in
+    let open Lambda_protobuf in
     List.fold_left
       (fun primitives (k, v) -> match v with
          | Lambda.Parsetree.Prm primitive -> Primitives.add k primitive primitives
@@ -82,11 +87,11 @@ module Main (B: BLOCK) (S: TCP) = struct
     List.fold_left
       (fun gamma (k, v) -> Gamma.add k v gamma)
       Gamma.empty
-      [ "Format.formatter",  Lambda.Type.abstract_projection formatter
-      ; "Block.error",       Lambda.Type.abstract_projection error
-      ; "Cstruct.t",         Lambda.Type.abstract_projection cstruct
-      ; "Mirage_block.info", Lambda.Type.abstract_projection info
-      ; "Block.write_error", Lambda.Type.abstract_projection write_error ]
+      [ "Format.formatter",  Lambda.Type.abstract_injection formatter
+      ; "Block.error",       Lambda.Type.abstract_injection error
+      ; "Cstruct.t",         Lambda.Type.abstract_injection cstruct
+      ; "Mirage_block.info", Lambda.Type.abstract_injection info
+      ; "Block.write_error", Lambda.Type.abstract_injection write_error ]
 
   let bind_err flow x f =
     x >>= function
@@ -95,23 +100,26 @@ module Main (B: BLOCK) (S: TCP) = struct
       Log.err (fun l -> l "Got %a, closing" S.TCPV4.pp_write_error e);
       S.TCPV4.close flow
 
-  let eval ~gamma ~primitives request =
+  let eval ~blocks ~gamma ~primitives request =
     try
-      Log.info (fun l -> l "Parse protobuf request:\n\n%a%!" (Fmt.hvbox pp_string) request);
+      Log.info (fun l -> l "Parse protobuf request:\n\n%a%!" pp_string request);
 
       let request = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string request) in
       let request = Lambda_protobuf.Pb.decode_request request in
-      let ast, typ = Lambda_protobuf.request ~gamma ~primitives request in
-      let Lambda.Type.V typ = Lambda.Type.typ typ in
+      let ast, ret, _ = Lambda_protobuf.request ~gamma ~primitives request in
+      let Lambda.Type.V ret = Lambda.Type.typ ret in
 
-      let res = match Lambda.type_and_eval ast typ with
-        | Ok _ as x -> x
+      let expected = Lambda.Type.(list AbstractTypes.cstruct @-> list AbstractTypes.cstruct @-> ret) in
+
+      let res = match Lambda.type_and_eval ast expected with
+        | Ok f -> let x = f blocks [] in Ok x
         | Error e -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e in
 
-      let pp_value = Lambda.Type.pp_val typ in
+      let pp_value = Lambda.Type.pp_val ret in
 
       Logs.info (fun l -> l "Process and eval: %a => %a.\n%!"
-                    Lambda.Parsetree.pp ast (Fmt.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
+                    Lambda.Parsetree.pp ast
+                    (Fmt.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
       Ok ()
     with exn ->
       Logs.err (fun l -> l "Retrieve an error: %s" (Printexc.to_string exn));
@@ -129,7 +137,7 @@ module Main (B: BLOCK) (S: TCP) = struct
     let block_buffer = Cstruct_buffer.create 512 in
     let decoder = Lambda_protobuf.Rpc.Decoder.default () in
 
-    let rec loop current_block decoder =
+    let rec loop blocks decoder =
       S.TCPV4.read flow >>= function
       | Ok `Eof ->
         Logs.info (fun f -> f "Closing connection!");
@@ -141,51 +149,54 @@ module Main (B: BLOCK) (S: TCP) = struct
         Lwt.return_unit
       | Ok (`Data src) ->
 
-        let rec go current_block decoder =
+        let rec go blocks decoder =
           Log.info (fun f -> f "State of the decoder: %a." Lambda_protobuf.Rpc.Decoder.pp decoder);
 
           match Lambda_protobuf.Rpc.Decoder.eval src decoder with
-          | `Await decoder -> decoder, current_block
+          | `Await decoder -> decoder, blocks
           | `Flush (decoder, `Protobuf, raw) ->
             Buffer.add_string buffer (Cstruct.to_string raw);
-            go current_block (Lambda_protobuf.Rpc.Decoder.flush decoder)
+            go blocks (Lambda_protobuf.Rpc.Decoder.flush decoder)
           | `Flush (decoder, `Block n, raw) ->
-            Log.info (fun f -> f "Retrive a chunk of the block %Ld (len: %d)." n (Cstruct.len raw));
-
-            let current_block =
-              if n = current_block then current_block
+            let blocks =
+              if Int64.to_int n = List.length blocks then blocks
               else
                 (Log.info (fun f ->
-                     f "Retrieve block %Ld:\n\n%a\n%!"
-                       current_block
-                       (Fmt.hvbox pp_string) (Cstruct_buffer.contents block_buffer))
-                ; Cstruct_buffer.clear block_buffer
-                ; n) in
+                     f "Retrieve block %d:\n\n%a\n%!"
+                       (List.length blocks)
+                       pp_string (Cstruct_buffer.contents block_buffer))
+                ; let block = Cstruct_buffer.contents block_buffer in
+                  Cstruct_buffer.clear block_buffer
+                ; block :: blocks) in
 
             Cstruct_buffer.add block_buffer raw;
 
-            go current_block (Lambda_protobuf.Rpc.Decoder.flush decoder)
+            go blocks (Lambda_protobuf.Rpc.Decoder.flush decoder)
           | `Error (decoder, err) ->
             Logs.warn (fun f ->
                 f "Retrieve an error: %a."
                   Lambda_protobuf.Rpc.Decoder.pp_error err);
-            (Lambda_protobuf.Rpc.Decoder.reset decoder, 0L)
+            (Lambda_protobuf.Rpc.Decoder.reset decoder, [])
           | `End decoder ->
 
-            if Cstruct_buffer.has block_buffer > 0
-            then (Log.info (fun f ->
-                f "Retrieve block %Ld:\n%a\n%!"
-                  current_block
-                  (Fmt.hvbox pp_string) (Cstruct_buffer.contents block_buffer))
-                 ; Cstruct_buffer.clear block_buffer);
+            let blocks =
+              if Cstruct_buffer.has block_buffer > 0
+              then (Log.info (fun f ->
+                  f "Retrieve block %d:\n%a\n%!"
+                    (List.length blocks)
+                    pp_string (Cstruct_buffer.contents block_buffer))
+                   ; let block = Cstruct_buffer.contents block_buffer in
+                     Cstruct_buffer.clear block_buffer
+                   ; block :: blocks)
+              else blocks in
 
-            eval ~gamma ~primitives (Buffer.contents buffer) |> fun res ->
+            eval ~blocks:(List.map Cstruct.of_string (List.rev blocks)) ~gamma ~primitives (Buffer.contents buffer) |> fun res ->
             Buffer.clear buffer;
-            (Lambda_protobuf.Rpc.Decoder.reset decoder, 0L) in
+            (Lambda_protobuf.Rpc.Decoder.reset decoder, []) in
 
-        let decoder, current_block = go current_block (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder) in
-        loop current_block decoder
-    in loop 0L decoder
+        let decoder, blocks = go blocks (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder) in
+        loop blocks decoder
+    in loop [] decoder
 
   let start b s () =
     let primitives, gamma = make_environment b in

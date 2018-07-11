@@ -92,107 +92,115 @@
 %left BAR
 
 %start main
-%type <(string * Parsetree.expr) list -> (Parsetree.expr, string) result> main
-%type <(string * Parsetree.expr) list -> string list -> Parsetree.expr> expr
+%type <(string * Parsetree.expr) list -> (string * Parsetree.Type.abstract) list -> (Parsetree.expr, string) result> main
+%type <(string * Parsetree.expr) list -> (string * Parsetree.Type.abstract) list -> string list -> Parsetree.expr> expr
 
 %start request
-%type <(string * Parsetree.expr) list -> (Parsetree.expr * Parsetree.Type.t, string) result> request
+%type <(string * Parsetree.expr) list -> (string * Parsetree.Type.abstract) list -> (Parsetree.expr * Parsetree.Type.t, string) result> request
 
 %%
 
 main:
-  | e=expr_seq EOF { fun prims ->
-                     try Ok (e prims [])
+  | e=expr_seq EOF { fun prims gams ->
+                     try Ok (e prims gams [])
                      with Internal s -> Error s }
 
 request:
   | e=expr_seq COLON t=typ EOF
-    { fun prims -> try Ok (e prims [], t) with Internal s -> Error s }
+                         { fun prims gams ->
+                           let pp ppf (Type.A w) = Fmt.string ppf w.Eq.name in
+                           Fmt.(pf stdout) "gamma: %a.\n%!"
+                             Fmt.(list (pair string pp)) gams;
+                           try Ok (e prims gams [], t gams) with Internal s -> Error s }
 
 expr_seq:
   | e=expr %prec below_SEMI { e }
   | e=expr SEMI             { e }
   | e=expr SEMI b=expr_seq
-    { fun prims ctx ->
+    { fun prims gams ctx ->
         let v = "_" and t = Type.unit in
-        let e = e prims ctx in
-        let b = b prims ctx in
+        let e = e prims gams ctx in
+        let b = b prims gams ctx in
         let_var t v e b }
 
 expr:
   | LPAR e=expr RPAR        { e }
-  | i=INT                   { fun _ _ -> int i }
-  | i=INT32                 { fun _ _ -> int32 i }
-  | i=INT64                 { fun _ _ -> int64 i }
-  | s=STRING                { fun _ _ -> string s }
-  | b=BOOL                  { fun _ _ -> if b then true_ else false_ }
-  | R t=typ e=expr          { fun p c -> right t (e p c) }
-  | L e=expr t=typ          { fun p c -> left t (e p c) }
-  | OK e=expr t=typ         { fun p c -> ok t (e p c) }
-  | ERROR t=typ e=expr      { fun p c -> error t (e p c) }
-  | RETURN e=expr           { fun p c -> return (e p c) }
-  | x=expr BIND f=expr      { fun p c -> bind (x p c) (f p c) }
-  | SOME e=expr             { fun p c -> some (e p c) }
+  | i=INT                   { fun _ _ _ -> int i }
+  | i=INT32                 { fun _ _ _ -> int32 i }
+  | i=INT64                 { fun _ _ _ -> int64 i }
+  | s=STRING                { fun _ _ _ -> string s }
+  | b=BOOL                  { fun _ _ _ -> if b then true_ else false_ }
+  | R t=typ e=expr          { fun p g c -> right (t g) (e p g c) }
+  | L e=expr t=typ          { fun p g c -> left (t g) (e p g c) }
+  | OK e=expr t=typ         { fun p g c -> ok (t g) (e p g c) }
+  | ERROR t=typ e=expr      { fun p g c -> error (t g) (e p g c) }
+  | RETURN e=expr           { fun p g c -> return (e p g c) }
+  | x=expr BIND f=expr      { fun p g c -> bind (x p g c) (f p g c) }
+  | SOME e=expr             { fun p g c -> some (e p g c) }
   | LPAR NONE COLON t=typ S_OPTION RPAR
-    { fun _ _ -> none t }
-  | FST e=expr              { fun p c -> fst (e p c) }
-  | SND e=expr              { fun p c -> snd (e p c) }
+    { fun _ g _ -> none (t g) }
+  | FST e=expr              { fun p g c -> fst (e p g c) }
+  | SND e=expr              { fun p g c -> snd (e p g c) }
   | LPAR LSQU BAR BAR RSQU COLON t=typ S_ARRAY RPAR
-                            { fun _ _ -> array ~typ:t [||] }
+                            { fun _ g _ -> array ~typ:(t g) [||] }
   | LSQU BAR l=list BAR RSQU
-    { fun p c ->
-      let l = List.map (fun e -> e p c) l in
+    { fun p g c ->
+      let l = List.map (fun e -> e p g c) l in
       array (Array.of_list l) }
   | LPAR LSQU RSQU COLON t=typ S_LIST RPAR
-                            { fun _ _ -> list ~typ:t [] }
-  | LSQU l=list RSQU        { fun p c -> list (List.map (fun e -> e p c) l)}
-  | a=expr COMMA b=expr     { fun p c -> pair (a p c) (b p c) }
+                            { fun _ g _ -> list ~typ:(t g) [] }
+  | LSQU l=list RSQU        { fun p g c -> list (List.map (fun e -> e p g c) l) }
+  | a=expr COMMA b=expr     { fun p g c -> pair (a p g c) (b p g c) }
   | IF i=expr THEN t=expr ELSE e=expr
-    { fun prims ctx ->
-        let i = i prims ctx in
-        let t = t prims ctx in
-        let e = e prims ctx in
+    { fun prims gams ctx ->
+        let i = i prims gams ctx in
+        let t = t prims gams ctx in
+        let e = e prims gams ctx in
         if_ i t e }
   | LET v=VAR COLON t=typ EQ e=expr IN b=expr_seq
-    { fun prims ctx ->
-        let e = e prims ctx in
-        let b = b prims (v::ctx) in
-        let_var t v e b }
+    { fun prims gams ctx ->
+        let e = e prims gams ctx in
+        let b = b prims gams (v::ctx) in
+        let_var (t gams) v e b }
   | LET n=VAR LPAR a=args RPAR COLON t=typ EQ e=expr IN b=expr_seq
-    { fun prims ctx ->
-        let e = e prims (add_ctx a ctx) in
-        let b = b prims (n :: ctx) in
-        let_fun t n a e b
+    { fun prims gams ctx ->
+        let a = a gams in
+        let e = e prims gams (add_ctx a ctx) in
+        let b = b prims gams (n :: ctx) in
+        let_fun (t gams) n a e b
     }
   | REC n=VAR LPAR a=arg RPAR COLON t=typ EQ e=expr IN b=expr_seq
-    { fun prims ctx ->
-        let e = e (add_prim a t prims) (add_ctx [a] ctx) in
-        let b = b prims (n :: ctx) in
-        let_rec t n a e b
-    }
+    { fun prims gams ctx ->
+        let a = a gams in
+        let t = t gams in
+        let e = e (add_prim a t prims) gams (add_ctx [a] ctx) in
+        let b = b prims gams (n :: ctx) in
+        let_rec t n a e b }
   | REC LPAR a=arg RPAR COLON t=typ ARROW e=expr
-    { fun prims ctx ->
-        let e = e prims (add_ctx [a] ctx) in
-        fix a t e }
+    { fun prims gams ctx ->
+        let a = a gams in
+        let e = e prims gams (add_ctx [a] ctx) in
+        fix a (t gams) e }
   | FUN LPAR a=args RPAR ARROW e=expr
-    { fun prims ctx ->
-        let e = e prims (add_ctx a ctx) in
+    { fun prims gams ctx ->
+        let a = a gams in
+        let e = e prims gams (add_ctx a ctx) in
         lambda a e }
-  | v=VAR                   { resolve_name v }
+  | v=VAR                   { fun prims _ ctx -> resolve_name v prims ctx }
   | v=VAR DOLLAR i=INT      {
-      fun prims ctx ->
+      fun prims _ ctx ->
         let id = index v ctx in
         if Pervasives.(id = Some i) then resolve_name v prims ctx
         else err "%s$%d should have id %a" v i Fmt.(option int) id }
   | a=expr f=binop b=expr   {
-      fun prims ctx ->
-      let a = a prims ctx in
-      let b = b prims ctx in
+      fun prims gams ctx ->
+      let a = a prims gams ctx in
+      let b = b prims gams ctx in
       f a b }
   | f=expr x=expr %prec APP {
-      fun prims ctx ->
-      let f = f prims ctx in
-      let x = x prims ctx in
+      fun prims gams ctx ->
+      let f = f prims gams ctx in
+      let x = x prims gams ctx in
       apply f x }
 
 %inline binop:
@@ -202,26 +210,34 @@ expr:
   | EQ    { ( = ) }
 
 typ:
-  | UNIT              { Type.unit }
-  | S_INT             { Type.int }
-  | S_INT32           { Type.int32 }
-  | S_INT64           { Type.int64 }
-  | S_BOOL            { Type.bool }
-  | S_STRING          { Type.string }
-  | a=typ S_LIST      { Type.list a }
-  | a=typ S_ARRAY     { Type.array a }
-  | a=typ S_OPTION    { Type.option a }
-  | a=typ ARROW b=typ { Type.(a @-> b) }
-  | a=typ TIMES b=typ { Type.(a ** b) }
-  | a=typ BAR b=typ   { Type.(a || b) }
+  | UNIT              { fun _ -> Type.unit }
+  | S_INT             { fun _ -> Type.int }
+  | S_INT32           { fun _ -> Type.int32 }
+  | S_INT64           { fun _ -> Type.int64 }
+  | S_BOOL            { fun _ -> Type.bool }
+  | S_STRING          { fun _ -> Type.string }
+  | a=typ S_LIST      { fun g -> Type.list (a g) }
+  | a=typ S_ARRAY     { fun g -> Type.array (a g) }
+  | a=typ S_OPTION    { fun g -> Type.option (a g) }
+  | a=typ ARROW b=typ { fun g -> Type.((a g) @-> (b g)) }
+  | a=typ TIMES b=typ { fun g -> Type.((a g) ** (b g)) }
+  | a=typ BAR b=typ   { fun g -> Type.((a g) || (b g)) }
   | LPAR a=typ RPAR   { a }
-  | LPAR a=typ COMMA b=typ RPAR S_RESULT { Type.result a b }
+  | LPAR a=typ COMMA b=typ RPAR S_RESULT { fun g -> Type.result (a g) (b g) }
+  | v=VAR             { fun gams ->
+                        try let Type.A { name; _} = (List.assoc v gams) in
+                            if String.equal name v
+                            then Type.unsafe_abstract (List.assoc v gams)
+                            else err "Mismatch abstract type: %s <> %s (expected)" v name
+                        with _ ->
+                          let pp ppf (Type.A w) = Fmt.string ppf w.Eq.name in
+                          err "Invalid abstract type: %s (%a)" v Fmt.(list (pair string pp)) gams }
 
 list:
   | x=separated_nonempty_list(SEMI, expr) { x }
 
 args:
-  | x=separated_nonempty_list(COMMA, arg) {x}
+  | l=separated_nonempty_list(COMMA, arg) { fun g -> List.map (fun a -> a g) l }
 
 arg:
-  | v=VAR COLON t=typ { (v, t) }
+  | v=VAR COLON t=typ { fun g -> (v, t g) }

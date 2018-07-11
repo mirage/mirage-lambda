@@ -57,23 +57,25 @@ val primitive: string -> ('a, 'b) Args.t -> 'b typ -> 'a -> primitive
 val parse:
   ?file:string ->
   ?primitives:primitive list ->
+  ?gamma:(string * Parsetree.Type.abstract) list ->
   string -> (Parsetree.expr, [`Msg of string]) result
 (** [parse ?file ?primitives input] tries to parse [input] and binds primitives
    with their associated names (see {!primitive}) in resulted {!Parsetree.expr}
    expression. [?file] helps to produce a better error message. *)
 
-val parse_exn: ?file:string -> ?primitives:primitive list -> string -> Parsetree.expr
+val parse_exn: ?file:string -> ?primitives:primitive list -> ?gamma:(string * Parsetree.Type.abstract) list -> string -> Parsetree.expr
 
 module Request: sig
   val parse:
     ?file:string ->
     ?primitives:primitive list ->
+    ?gamma:(string * Parsetree.Type.abstract) list ->
     string -> (Parsetree.expr * Parsetree.Type.t, [`Msg of string]) result
   (** [parse ?file ?primitives input] tries to parse [input] and binds primitives
       with their associated names (see {!primitive}) in resulted {!Parsetree.expr}
       expression. [?file] helps to produce a better error message. *)
 
-  val parse_exn: ?file:string -> ?primitives:primitive list -> string -> Parsetree.expr * Parsetree.Type.t
+  val parse_exn: ?file:string -> ?primitives:primitive list -> ?gamma:(string * Parsetree.Type.abstract) list -> string -> Parsetree.expr * Parsetree.Type.t
 end
 
 val typ: Parsetree.expr -> (expr, error) result

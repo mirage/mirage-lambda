@@ -14,7 +14,7 @@ type t =
   | Array of Parsetree.Type.t * t array
   | Option of Parsetree.Type.t * t option
   | Pair of (t * t)
-  | Either of (t, t) either
-  | Result of (t, t) result
+  | Either of (t, t) either * Parsetree.Type.t * Parsetree.Type.t
+  | Result of (t, t) result * Parsetree.Type.t * Parsetree.Type.t
 
 val unsafe_value: Parsetree.value -> t

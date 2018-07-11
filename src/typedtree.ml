@@ -69,8 +69,8 @@ module Type = struct
     let wit = Eq.Witness.v () in
     Abstract {name; wit}
 
-  let abstract_projection = function
-    | Abstract { name; wit; } -> Parsetree.Type.A {Eq.name;wit;}
+  let abstract_injection = function
+    | Abstract { name; wit; } -> Parsetree.Type.A { Eq.name; wit; }
     | _ -> Fmt.invalid_arg "Type.abstract_projection: expected abstract type"
 
   let ( @->) = arrow
@@ -337,8 +337,7 @@ module Prim = struct
       let rec chop n l = match n, l with
         | 0, l -> l
         | n, _ :: r -> chop (n -- 1) r
-        | _, _ -> assert false
-      in
+        | _, _ -> assert false in
       let miss = List.length g in
       let Env.V g' = Env.typ List.(rev_append p.args g) in
       let Type.V typ = Type.typ p.ret in

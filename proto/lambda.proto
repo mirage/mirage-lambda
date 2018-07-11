@@ -103,6 +103,7 @@ message Value {
     message Int64 { required int64 value = 1; }
     message Bool { required bool value = 1; }
     message String { required string value = 1; }
+    message Bytes { required string value = 1; }
     message List {
         required Type typ = 1;
         repeated Value value = 2;
@@ -119,6 +120,32 @@ message Value {
         required Value a = 1;
         required Value b = 2;
     }
+    message Result {
+        message Ok { required Value value = 1; }
+        message Error { required Value value = 1; }
+        message ResultValue {
+            oneof t {
+                Ok ok = 1;
+                Error error = 2;
+            }
+        }
+        required ResultValue value = 1;
+        required Type typ_ok = 2;
+        required Type typ_error = 3;
+    }
+    message Either {
+        message Left { required Value value = 1; }
+        message Right { required Value value = 1; }
+        message EitherValue {
+            oneof t {
+                Left left = 1;
+                Right right = 2;
+            }
+        }
+        required EitherValue value = 1;
+        required Type typ_l = 2;
+        required Type typ_r = 3;
+    }
 
     oneof t {
         Unit unit = 1;
@@ -131,6 +158,9 @@ message Value {
         Array array = 8;
         Option option = 9;
         Pair pair = 10;
+        Bytes bytes = 11;
+        Result result = 12;
+        Either either = 13;
     }
 }
 
@@ -205,4 +235,5 @@ message Expr {
 message Request {
   required Expr expr = 1;
   required Type typ = 2;
+  required int64 output = 3;
 }

@@ -80,19 +80,19 @@ module Decoder = struct
     let get_byte k src t = get_byte ~ctor k src t in
 
     if (t.i_len - t.i_pos) > 7
-    then let n = Cstruct.BE.get_uint64 src (t.i_off + t.i_pos) in
+    then let n = Cstruct.LE.get_uint64 src (t.i_off + t.i_pos) in
       k n src
         { t with i_pos = t.i_pos + 8 }
     else if (t.i_len - t.i_pos) > 0
     then (get_byte
-          @@ fun byte0 -> get_byte
-          @@ fun byte1 -> get_byte
-          @@ fun byte2 -> get_byte
-          @@ fun byte3 -> get_byte
-          @@ fun byte4 -> get_byte
-          @@ fun byte5 -> get_byte
+          @@ fun byte7 -> get_byte
           @@ fun byte6 -> get_byte
-          @@ fun byte7 ->
+          @@ fun byte5 -> get_byte
+          @@ fun byte4 -> get_byte
+          @@ fun byte3 -> get_byte
+          @@ fun byte2 -> get_byte
+          @@ fun byte1 -> get_byte
+          @@ fun byte0 ->
           let n =
             Int64.((byte7 lsl 56)
                    lor (byte6 lsl 48)
@@ -270,18 +270,18 @@ module Encoder = struct
     let put_byte byte k dst t = put_byte ~ctor byte k dst t in
     if (t.o_len - t.o_pos) > 8
     then begin
-      Cstruct.BE.set_uint64 dst (t.o_off + t.o_pos) n;
+      Cstruct.LE.set_uint64 dst (t.o_off + t.o_pos) n;
       k src dst { t with o_pos = t.o_pos + 8 }
     end else if (t.o_len - t.o_pos) > 0
     then begin
-      let byte0 = Int64.((n land 0xFF00000000000000L) lsr 56) in
-      let byte1 = Int64.((n land 0x00FF000000000000L) lsr 48) in
-      let byte2 = Int64.((n land 0x0000FF0000000000L) lsr 40) in
-      let byte3 = Int64.((n land 0x000000FF00000000L) lsr 32) in
-      let byte4 = Int64.((n land 0x00000000FF000000L) lsr 24) in
-      let byte5 = Int64.((n land 0x0000000000FF0000L) lsr 16) in
-      let byte6 = Int64.((n land 0x000000000000FF00L) lsr 8)  in
-      let byte7 = Int64.(to_int (n land 0x00000000000000FFL)) in
+      let byte7 = Int64.((n land 0xFF00000000000000L) lsr 56) in
+      let byte6 = Int64.((n land 0x00FF000000000000L) lsr 48) in
+      let byte5 = Int64.((n land 0x0000FF0000000000L) lsr 40) in
+      let byte4 = Int64.((n land 0x000000FF00000000L) lsr 32) in
+      let byte3 = Int64.((n land 0x00000000FF000000L) lsr 24) in
+      let byte2 = Int64.((n land 0x0000000000FF0000L) lsr 16) in
+      let byte1 = Int64.((n land 0x000000000000FF00L) lsr 8)  in
+      let byte0 = Int64.(to_int (n land 0x00000000000000FFL)) in
 
       (put_byte byte0
        @@ put_byte byte1

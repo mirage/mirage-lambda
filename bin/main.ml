@@ -45,8 +45,10 @@ let load_file filename =
   really_input ic rs 0 ln;
   Bytes.unsafe_to_string rs
 
+let cstruct : Cstruct.t Lambda.Type.t = Lambda.Type.abstract "Cstruct.t"
+
 let eval ?(primitives = []) s =
-  match Lambda.Request.parse ~primitives s with
+  match Lambda.Request.parse ~primitives ~gamma:[ "Cstruct.t", (Lambda.Type.abstract_injection cstruct) ] s with
   | Error _ as e -> e
   | Ok (ast, typ) ->
     let Lambda.Type.V typ = Lambda.Type.typ typ in
@@ -54,13 +56,13 @@ let eval ?(primitives = []) s =
     | Ok value -> Ok (Lambda.uncast typ value)
     | Error e -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e
 
-let request ~block_n ~block_size ?(primitives = []) s =
-  match Lambda.Request.parse ~primitives s with
+let request ~block_n ~block_size ~block_output ?(primitives = []) s =
+  match Lambda.Request.parse ~primitives ~gamma:[ "Cstruct.t", (Lambda.Type.abstract_injection cstruct) ] s with
   | Error _ as e -> e
   | Ok v ->
     let (ast, typ) = v in
     Fmt.(pf stdout) "Ready to send: %a:%a.\n%!" Lambda.Parsetree.pp ast Lambda.Parsetree.Type.pp typ;
-    let encoder = Lambda_protobuf.Rpc.Encoder.default (Lambda_protobuf.make v) (Int64.of_int block_size) (Int64.of_int block_n) in
+    let encoder = Lambda_protobuf.Rpc.Encoder.default (Lambda_protobuf.make (ast, typ, Int64.of_int block_output)) (Int64.of_int block_size) (Int64.of_int block_n) in
     Ok encoder
 
 let make_socket addr port =
@@ -110,14 +112,14 @@ let send_request oc blocks encoder =
       flush oc in
   go encoder
 
-let repl ?(block_n = 0) ?(block_size = 0) socket blocks =
+let repl ?(block_n = 0) ?(block_size = 0) ~block_output socket blocks =
   let rec go () =
     output_string stdout "# ";
     flush stdout;
 
     match input_line stdin with
     | expr ->
-      (match request ~block_n ~block_size expr with
+      (match request ~block_n ~block_size ~block_output expr with
        | Ok encoder ->
          send_request socket blocks encoder;
          Fmt.(pf stdout) "Send a lambda-calculus expression.\n%!";
@@ -125,7 +127,7 @@ let repl ?(block_n = 0) ?(block_size = 0) socket blocks =
        | Error (`Msg e) -> Fmt.epr "Retrieve an error: %s" e)
     | exception End_of_file -> () in go ()
 
-let main host port blocks =
+let main host port output blocks =
   let blocks = List.map load_file blocks in
   let socket, _ = make_socket host port in
 
@@ -140,9 +142,9 @@ let main host port blocks =
 
   match status with
   | Ok (Some (block_n, block_size)) ->
-    repl ~block_n ~block_size socket (Array.of_list blocks); `Ok ()
+    repl ~block_n ~block_size ~block_output:output socket (Array.of_list blocks); `Ok ()
   | Ok None ->
-    repl socket [||]; `Ok ()
+    repl socket ~block_output:output [||]; `Ok ()
   | Error (`Msg err) -> `Error (true, err)
 
 open Cmdliner
@@ -166,10 +168,14 @@ let blocks =
   let doc = "List of blocks to send to the unikernel" in
   Arg.(value & opt (list file) [] & info ["blocks"] ~doc ~docv:"<list>")
 
+let output =
+  let doc = "Expected output blocks" in
+  Arg.(required & opt (some int) None & info ["o"; "output"] ~doc ~docv:"<int>")
+
 let cmd =
   let doc = "Binary example to communicate with unikernel." in
   let exits = Term.default_exits in
-  Term.(ret (const main $ host $ port $ blocks)),
+  Term.(ret (const main $ host $ port $ output $ blocks)),
   Term.info "main" ~version:"<none>" ~doc ~exits
 
 let () = Term.(exit @@ eval cmd)

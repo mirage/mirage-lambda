@@ -2,6 +2,41 @@ module Types = Lambda_types
 module Pb = Lambda_pb
 module Rpc = Lambda_rpc
 
+type ('a, 'b) either = ('a, 'b) Lambda.Value.either =
+  | L of 'a
+  | R of 'b
+
+let opt_eq ~eq a b = match a, b with
+  | Some a, Some b -> eq a b
+  | None, None -> true
+  | _, _ -> false
+
+let lst_eq ~eq a b =
+  try List.for_all2 eq a b
+  with _ -> false
+
+let arr_eq ~eq a b =
+  try List.for_all2 eq (Array.to_list a) (Array.to_list b)
+  with _ -> false
+
+let pair_eq ~eqa ~eqb (x, y) (a, b) = eqa x a && eqb y b
+
+let either_eq ~eql ~eqr a b = match a, b with
+  | L a, L b -> eql a b
+  | R a, R b -> eqr a b
+  | _, _ -> false
+
+let result_eq ~eq_ok ~eq_error a b = match a, b with
+  | Ok a, Ok b -> eq_ok a b
+  | Error a, Error b -> eq_error a b
+  | _, _ -> false
+
+let pp_either
+  : ppl:'a Fmt.t -> ppr:'b Fmt.t -> ('a, 'b) Lambda.Value.either Fmt.t
+  = fun ~ppl ~ppr ppf -> function
+  | L l -> Fmt.pf ppf "(L %a)" ppl l
+  | R r -> Fmt.pf ppf "(R %a)" ppr r
+
 open Lambda.Parsetree
 
 module Gamma = Map.Make(String)
@@ -83,21 +118,6 @@ let unop_to : unop -> Types.unop = function
   | Ok t -> Types.Ok { value = typ_to t }
   | Error t -> Types.Error { value = typ_to t }
 
-let opt_eq ~eq a b = match a, b with
-  | Some a, Some b -> eq a b
-  | None, None -> true
-  | _, _ -> false
-
-let lst_eq ~eq a b =
-  try List.for_all2 eq a b
-  with _ -> false
-
-let arr_eq ~eq a b =
-  try List.for_all2 eq (Array.to_list a) (Array.to_list b)
-  with _ -> false
-
-let pair_eq ~eqa ~eqb (x, y) (a, b) = eqa x a && eqb y b
-
 let rec value_from : Types.value -> value = function
   | Types.Unit ->
     V { v = (); t = Unit;
@@ -112,6 +132,8 @@ let rec value_from : Types.value -> value = function
     V { v = value; t = Bool; pp = Fmt.bool; eq = Pervasives.(=) }
   | Types.String { value; } ->
     V { v = value; t = String; pp = Fmt.string; eq = Pervasives.(=) }
+  | Types.Bytes { value; } ->
+    V { v = Bytes.of_string value; t = Bytes; pp = Fmt.using Bytes.unsafe_to_string Fmt.string; eq = Pervasives.(=) }
   | Types.Option { typ; value = Some value; } ->
     let V { v; t; pp; eq; } = value_from value in
     let Lambda.Type.V t' = Lambda.Type.typ (typ_from typ) in
@@ -145,7 +167,9 @@ let rec value_from : Types.value -> value = function
         let V { v; t; pp; eq; } = acc in
         (match Lambda.Type.equal t (List t') with
          | Some Lambda.Eq.Refl -> V { v = List.rev v; t; pp; eq; }
-         | None -> assert false)
+         | None -> Fmt.invalid_arg "Cannot unify %a and %a"
+                     Lambda.Type.pp t
+                     Lambda.Type.pp (List t'))
       | x :: r ->
         let V { v = x; t; pp = _; eq = _; } = value_from x in
         let V { v = acc; t = tacc; pp; eq; } = acc in
@@ -165,13 +189,17 @@ let rec value_from : Types.value -> value = function
         let pp = Lambda.Type.pp_val (Array t') in
         let eq = Lambda.Type.eq_val (Array t') in
         V { v = Array.of_list v; t = Array t'; pp; eq; }
-      | None -> assert false in
+      | None -> Fmt.invalid_arg "Cannot unify %a and %a"
+                  Lambda.Type.pp (List t')
+                  Lambda.Type.pp t in
     let rec go acc = function
       | [] ->
         let V { v; t; pp; eq; } = acc in
         (match Lambda.Type.equal t (List t') with
          | Some Lambda.Eq.Refl -> V { v = List.rev v; t; pp; eq; }
-         | None -> assert false)
+         | None -> Fmt.invalid_arg "Cannot unify %a and %a"
+                     Lambda.Type.pp t
+                     Lambda.Type.pp (List t'))
       | x :: r ->
         let V { v = x; t; pp = _; eq = _; } = value_from x in
         let V { v = acc; t = tacc; pp; eq; } = acc in
@@ -186,6 +214,54 @@ let rec value_from : Types.value -> value = function
     let V { v = a; t = ta; pp = ppa; eq = eqa; } = value_from a in
     let V { v = b; t = tb; pp = ppb; eq = eqb; } = value_from b in
     V { v = (a, b); t = Pair (ta, tb); pp = Fmt.pair ppa ppb; eq = pair_eq ~eqa ~eqb }
+  | Types.Either { value = Types.Left { value; }; typ_l; typ_r; } ->
+    let V { v; t; pp = ppl; eq = eql; } = value_from value in
+    let Lambda.Type.V tl = Lambda.Type.typ (typ_from typ_l) in
+    let Lambda.Type.V tr = Lambda.Type.typ (typ_from typ_r) in
+
+    let ppr, eqr = Lambda.Type.pp_val tr, Lambda.Type.eq_val tr in
+
+    (match Lambda.Type.equal t tl with
+     | Some Lambda.Eq.Refl -> V { v = Lambda.Value.L v; t = Either (tl, tr); pp = pp_either ~ppl ~ppr; eq = either_eq ~eql ~eqr }
+     | None -> Fmt.invalid_arg "Cannot unify %a and %a"
+                 Lambda.Type.pp t
+                 Lambda.Type.pp tl)
+  | Types.Either { value = Types.Right { value; }; typ_l; typ_r; } ->
+    let V { v; t; pp = ppr; eq = eqr; } = value_from value in
+    let Lambda.Type.V tl = Lambda.Type.typ (typ_from typ_l) in
+    let Lambda.Type.V tr = Lambda.Type.typ (typ_from typ_r) in
+
+    let ppl, eql = Lambda.Type.pp_val tl, Lambda.Type.eq_val tl in
+
+    (match Lambda.Type.equal t tr with
+     | Some Lambda.Eq.Refl -> V { v = Lambda.Value.R v; t = Either (tl, tr); pp = pp_either ~ppl ~ppr; eq = either_eq ~eql ~eqr }
+     | None -> Fmt.invalid_arg "Cannot unify %a and %a"
+                 Lambda.Type.pp t
+                 Lambda.Type.pp tl)
+  | Types.Result { value = Types.Ok { value; }; typ_ok; typ_error; } ->
+    let V { v; t; pp = pp_ok; eq = eq_ok; } = value_from value in
+    let Lambda.Type.V tok = Lambda.Type.typ (typ_from typ_ok) in
+    let Lambda.Type.V terror = Lambda.Type.typ (typ_from typ_error) in
+
+    let pp_error, eq_error = Lambda.Type.pp_val terror, Lambda.Type.eq_val terror in
+
+    (match Lambda.Type.equal t tok with
+     | Some Lambda.Eq.Refl -> V { v = Pervasives.Ok v; t = Result (tok, terror); pp = Fmt.result ~ok:pp_ok ~error:pp_error; eq = result_eq ~eq_ok ~eq_error }
+     | None -> Fmt.invalid_arg "Cannot unify %a and %a"
+                 Lambda.Type.pp t
+                 Lambda.Type.pp tok)
+  | Types.Result { value = Types.Error { value; }; typ_ok; typ_error; } ->
+    let V { v; t; pp = pp_error; eq = eq_error; } = value_from value in
+    let Lambda.Type.V tok = Lambda.Type.typ (typ_from typ_ok) in
+    let Lambda.Type.V terror = Lambda.Type.typ (typ_from typ_error) in
+
+    let pp_ok, eq_ok = Lambda.Type.pp_val tok, Lambda.Type.eq_val tok in
+
+    (match Lambda.Type.equal t terror with
+     | Some Lambda.Eq.Refl -> V { v = Pervasives.Error v; t = Result (tok, terror); pp = Fmt.result ~ok:pp_ok ~error:pp_error; eq = result_eq ~eq_ok ~eq_error }
+     | None -> Fmt.invalid_arg "Cannot unify %a and %a"
+                 Lambda.Type.pp t
+                 Lambda.Type.pp terror)
 
 module Option = struct let map f = function Some v -> Some (f v) | None -> None end
 
@@ -200,7 +276,12 @@ let value_to : value -> Types.value = fun v ->
     | Lambda.Value.List (typ, value) -> Types.List { typ = typ_to typ; value = List.map go value; }
     | Lambda.Value.Array (typ, value) -> Types.Array { typ = typ_to typ; value = Array.map go value |> Array.to_list; }
     | Lambda.Value.Option (typ, value) -> Types.Option { typ = typ_to typ; value = Option.map go value; }
-    | _ -> assert false (* TODO *) in
+    | Lambda.Value.Bytes value -> Types.Bytes { value = Bytes.to_string value; }
+    | Lambda.Value.Pair (a, b) -> Types.Pair { a = go a; b = go b; }
+    | Lambda.Value.Either (L value, typl, typr) -> Types.Either { value = Types.Left { value = go value }; typ_l = typ_to typl; typ_r = typ_to typr }
+    | Lambda.Value.Either (R value, typl, typr) -> Types.Either { value = Types.Right { value = go value }; typ_l = typ_to typl; typ_r = typ_to typr }
+    | Lambda.Value.Result (Ok value, typ_ok, typ_error) -> Types.Result { value = Types.Ok { value = go value }; typ_ok = typ_to typ_ok; typ_error = typ_to typ_error }
+    | Lambda.Value.Result (Error value, typ_ok, typ_error) -> Types.Result { value = Types.Error { value = go value }; typ_ok = typ_to typ_ok; typ_error = typ_to typ_error } in
   go (Lambda.Value.unsafe_value v)
 
 let expr_from
@@ -309,12 +390,13 @@ let rec expr_to : expr -> Types.expr = function
 let request
   : ?gamma:Type.abstract Gamma.t ->
     ?primitives:primitive Primitives.t ->
-    Types.request -> expr * Type.t
+    Types.request -> expr * Type.t * int64
   = fun ?gamma ?primitives request ->
-    expr_from ?gamma ?primitives request.Types.expr, typ_from ?gamma request.Types.typ
+    expr_from ?gamma ?primitives request.Types.expr, typ_from ?gamma request.Types.typ, request.Types.output
 
 let make
-  : expr * Type.t -> Types.request
-  = fun (expr, typ) ->
+  : expr * Type.t * int64 -> Types.request
+  = fun (expr, typ, output) ->
     { Types.expr = expr_to expr
-    ; typ = typ_to typ }
+    ; typ = typ_to typ
+    ; output }

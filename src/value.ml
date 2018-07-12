@@ -17,6 +17,7 @@ type t =
   | Either of (t, t) either * Parsetree.Type.t * Parsetree.Type.t
   | Result of (t, t) result * Parsetree.Type.t * Parsetree.Type.t
   | Return of (t * Parsetree.Type.t)
+  | Abstract
 
 let option_map f = function
   | Some v -> Some (f v)
@@ -56,5 +57,6 @@ let unsafe_value : Parsetree.value -> t = fun (Parsetree.V x) ->
         | Sleep    -> Fmt.invalid_arg "the lwt thread is sleeping"
         | Return v -> Return (go tx v, Typedtree.Type.untype tx)
       end
-    | _ -> invalid_arg "Unsafe_value.unsafe_value: invalid type" in
+    | T.Abstract _ -> Abstract
+    | t -> Fmt.invalid_arg "Unsafe_value.unsafe_value: invalid type %a" Typedtree.Type.pp t in
   go x.t x.v

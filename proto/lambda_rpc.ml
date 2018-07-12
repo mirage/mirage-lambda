@@ -10,12 +10,15 @@ module Int64 = struct
   let succ = Int64.succ
 end
 
+type request = Request
+type reply = Reply
+
 module Decoder = struct
   type error
 
   let pp_error : error Fmt.t = fun _ _ -> assert false
 
-  type t =
+  type 'kind t =
     { i_off : int
     ; i_pos : int
     ; i_len : int
@@ -23,20 +26,21 @@ module Decoder = struct
     ; block_size : int64
     ; block_n    : int64
     ; i_tmp : Cstruct.t
-    ; state : state }
-  and state =
-    | Header of k
+    ; kind  : 'kind
+    ; state : 'kind state }
+  and 'kind state =
+    | Header of 'kind k
     | Raw of { kind : kind; consumed : int64 }
     | Stp of { kind : kind; consumed : int64; buf : Cstruct.t }
     | Exception of error
     | End
-  and k = Cstruct.t -> t -> res
-  and res =
-    | Wait of t
-    | Error of t * error
-    | Flush of t * kind * Cstruct.t
-    | Cont of t
-    | Ok of t
+  and 'kind k = Cstruct.t -> 'kind t -> 'kind res
+  and 'kind res =
+    | Wait of 'kind t
+    | Error of 'kind t * error
+    | Flush of 'kind t * kind * Cstruct.t
+    | Cont of 'kind t
+    | Ok of 'kind t
   and kind = [ `Protobuf | `Block of int64 ]
 
   let pp_kind ppf = function
@@ -146,7 +150,7 @@ module Decoder = struct
                                ; consumed = 0L } })
     src t
 
-  let default ?(len = 0x8000) () =
+  let default ?(len = 0x8000) kind =
     { i_off = 0
     ; i_pos = 0
     ; i_len = 0
@@ -154,6 +158,7 @@ module Decoder = struct
     ; block_size = 0L
     ; block_n    = 0L
     ; i_tmp      = Cstruct.create len
+    ; kind
     ; state = Header header }
 
   let reset t =
@@ -195,6 +200,10 @@ module Decoder = struct
     { t with i_off = off
            ; i_len = len
            ; i_pos = 0 }
+
+  let block_size t = t.block_size
+  let proto_size t = t.proto_size
+  let block_n t = t.block_n
 end
 
 module Encoder = struct
@@ -202,7 +211,7 @@ module Encoder = struct
 
   let pp_error : error Fmt.t = fun _ _ -> assert false
 
-  type t =
+  type 'kind t =
     { o_off : int
     ; o_pos : int
     ; o_len : int
@@ -214,20 +223,21 @@ module Encoder = struct
     ; block_n    : int64
     ; p_tmp : string
     ; o_tmp : Cstruct.t
-    ; state : state }
-  and state =
-    | Header of k
+    ; kind : 'kind
+    ; state : 'kind state }
+  and 'kind state =
+    | Header of 'kind k
     | Protobuf of { consumed : int }
     | Block of { n : int64; consumed : int }
     | Exception of error
     | End
-  and k = Cstruct.t -> Cstruct.t -> t -> res
-  and res =
-    | Cont of t
-    | Flush of t
-    | Wait of t
-    | Ok of t
-    | Error of t * error
+  and 'kind k = Cstruct.t -> Cstruct.t -> 'kind t -> 'kind res
+  and 'kind res =
+    | Cont of 'kind t
+    | Flush of 'kind t
+    | Wait of 'kind t
+    | Ok of 'kind t
+    | Error of 'kind t * error
 
   let pp_state ppf = function
     | Header _ -> Fmt.pf ppf "(Header #k)"
@@ -343,22 +353,31 @@ module Encoder = struct
      @@ fun _src _dst t -> Cont { t with state = Protobuf { consumed = 0 } })
       src dst t
 
-  let default ?(len = 0x8000) request block_size block_n =
-    let encoder = Pbrt.Encoder.create () in
-    Lambda_pb.encode_request request encoder;
-    let p_tmp = Pbrt.Encoder.to_bytes encoder |> Bytes.unsafe_to_string in
-    { i_off = 0
-    ; i_pos = 0
-    ; i_len = 0
-    ; o_off = 0
-    ; o_pos = 0
-    ; o_len = 0
-    ; proto_size = Int64.of_int (String.length p_tmp)
-    ; block_size
-    ; block_n
-    ; p_tmp
-    ; o_tmp = Cstruct.create len
-    ; state = Header header }
+  type ('k, 'v) protobuf =
+    | Request : (Lambda_types.request, request) protobuf
+    | Reply   : (Lambda_types.value,  reply) protobuf
+
+  let default
+    : type p k. (p, k) protobuf -> ?len:int -> p -> int64 -> int64 -> k t
+    = fun kind ?(len = 0x8000) protobuf block_size block_n ->
+      let encoder = Pbrt.Encoder.create () in
+      let () = match kind with
+        | Request -> Lambda_pb.encode_request protobuf encoder
+        | Reply   -> Lambda_pb.encode_value protobuf encoder in
+      let p_tmp = Pbrt.Encoder.to_bytes encoder |> Bytes.unsafe_to_string in
+      { i_off = 0
+      ; i_pos = 0
+      ; i_len = 0
+      ; o_off = 0
+      ; o_pos = 0
+      ; o_len = 0
+      ; proto_size = Int64.of_int (String.length p_tmp)
+      ; block_size
+      ; block_n
+      ; p_tmp
+      ; o_tmp = Cstruct.create len
+      ; kind = (match kind with Request -> Request | Reply -> Reply) (* GADT LOLILOL *)
+      ; state = Header header }
 
   let eval0 src dst t =
     match t.state with

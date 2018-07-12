@@ -148,6 +148,8 @@ let receive_reply ic decoder =
         then (clean_and_return buffer_block :: blocks)
         else blocks in
 
+      Fmt.(pf stdout) ">>> protobuf: %a.\n%!" pp_string (Buffer.contents buffer_protobuf);
+
       let reply = Buffer.contents buffer_protobuf in
       let decoder = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string reply) in
       let reply = Pb.decode_value decoder in

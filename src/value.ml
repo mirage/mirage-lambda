@@ -47,6 +47,14 @@ let unsafe_value : Parsetree.value -> t = fun (Parsetree.V x) ->
     | T.Pair (ta, tb) -> Pair (pair_map (go ta) (go tb) value)
     | T.Either (ta, tb) -> Either (either_map (go ta) (go tb) value, Typedtree.Type.untype ta, Typedtree.Type.untype tb)
     | T.Result (ta, tb) -> Result (result_map (go ta) (go tb) value, Typedtree.Type.untype ta, Typedtree.Type.untype tb)
-    | T.Apply (tx, T.Lwt) -> Return Typedtree.Type.(App (Lwt.prj tx))
+    | T.Apply (tx, T.Lwt) ->
+      let Typedtree.Type.App v = value in
+      let v = Typedtree.Type.Lwt.prj v in
+      (* The thread is already resolved by `L.eval`. *)
+      begin match Lwt.state v with
+        | Fail e   -> raise e
+        | Sleep    -> Fmt.invalid_arg "the lwt thread is sleeping"
+        | Return v -> Return (go tx v, Typedtree.Type.untype tx)
+      end
     | _ -> invalid_arg "Unsafe_value.unsafe_value: invalid type" in
   go x.t x.v

@@ -70,7 +70,7 @@
 %token DOLLAR
 %token FST SND
 
-%token S_INT S_INT32 S_INT64 S_BOOL S_STRING S_LIST S_ARRAY S_OPTION S_RESULT
+%token S_INT S_INT32 S_INT64 S_BOOL S_STRING S_LIST S_ARRAY S_OPTION S_RESULT S_LWT
 %token ARROW BAR
 
 %right    ARROW
@@ -216,12 +216,14 @@ typ:
   | S_INT64           { fun _ -> Type.int64 }
   | S_BOOL            { fun _ -> Type.bool }
   | S_STRING          { fun _ -> Type.string }
+  | S_LWT             { fun _ -> Type.lwt }
   | a=typ S_LIST      { fun g -> Type.list (a g) }
   | a=typ S_ARRAY     { fun g -> Type.array (a g) }
   | a=typ S_OPTION    { fun g -> Type.option (a g) }
   | a=typ ARROW b=typ { fun g -> Type.((a g) @-> (b g)) }
   | a=typ TIMES b=typ { fun g -> Type.((a g) ** (b g)) }
   | a=typ BAR b=typ   { fun g -> Type.((a g) || (b g)) }
+  | a=typ b=typ %prec APP { fun g -> Type.apply (a g) (b g) }
   | LPAR a=typ RPAR   { a }
   | LPAR a=typ COMMA b=typ RPAR S_RESULT { fun g -> Type.result (a g) (b g) }
   | v=VAR             { fun gams ->

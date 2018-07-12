@@ -114,6 +114,7 @@ rule program t = parse
   | "result" { p t "result"; S_RESULT }
   | "bool"   { p t "bool"; S_BOOL }
   | "string" { p t "string"; S_STRING }
+  | "lwt"    { p t "lwt"; S_LWT }
   | var as s { p t "VAR %s" s; VAR s }
   | eof      { EOF }
 

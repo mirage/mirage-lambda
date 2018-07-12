@@ -45,12 +45,8 @@ let load_file filename =
   really_input ic rs 0 ln;
   Bytes.unsafe_to_string rs
 
-let cstruct : Cstruct.t Lambda.Type.t = Lambda.Type.abstract "Cstruct.t"
-let error : unit Lambda.Type.t = Lambda.Type.abstract "Block.error"
-
-let eval ?(primitives = []) s =
-  match Lambda.Request.parse ~primitives ~gamma:[ "Cstruct.t", (Lambda.Type.abstract_injection cstruct)
-                                                ; "Block.error", (Lambda.Type.abstract_injection error) ] s with
+let eval ?(gamma = []) ?(primitives = []) s =
+  match Lambda.Request.parse ~primitives ~gamma s with
   | Error _ as e -> e
   | Ok (ast, typ) ->
     let Lambda.Type.V typ = Lambda.Type.typ typ in
@@ -58,9 +54,8 @@ let eval ?(primitives = []) s =
     | Ok value -> Ok (Lambda.uncast typ value)
     | Error e -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e
 
-let request ~block_n ~block_size ~block_output ?(primitives = []) s =
-  match Lambda.Request.parse ~primitives ~gamma:[ "Cstruct.t", (Lambda.Type.abstract_injection cstruct)
-                                                ; "Block.error", (Lambda.Type.abstract_injection error) ] s with
+let request ~block_n ~block_size ~block_output ?(gamma = []) ?(primitives = []) s =
+  match Lambda.Request.parse ~primitives ~gamma s with
   | Error _ as e -> e
   | Ok v ->
     let (ast, typ) = v in
@@ -162,6 +157,13 @@ let receive_reply ic decoder =
       List.iteri (fun idx block -> Fmt.(pf stdout) "block %d:\n\n%a\n%!" idx pp_string block) (List.rev blocks) in
   go [] decoder
 
+let cstruct : Cstruct.t Lambda.Type.t = Lambda.Type.abstract "Cstruct.t"
+let error : unit Lambda.Type.t = Lambda.Type.abstract "Block.error"
+
+let gamma =
+  [ "Cstruct.t", (Lambda.Type.abstract_injection cstruct)
+  ; "Block.error", (Lambda.Type.abstract_injection error) ]
+
 let primitives =
   Lambda.[ L.primitive "Block.read" Type.[ int64; list cstruct; ] Type.(lwt (result unit error)) (fun _ _ -> assert false) ]
 
@@ -172,7 +174,7 @@ let repl ?(block_n = 0) ?(block_size = 0) ~block_output (socketo, socketi) block
 
     match input_line stdin with
     | expr ->
-      (match request ~block_n ~block_size ~block_output ~primitives expr with
+      (match request ~block_n ~block_size ~block_output ~primitives ~gamma expr with
        | Ok encoder ->
          send_request socketo blocks encoder;
          Fmt.(pf stdout) "Send a lambda-calculus expression.\n%!";

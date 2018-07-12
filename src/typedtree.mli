@@ -17,10 +17,11 @@
 
 module Type: sig
 
-  module Lwt: Higher.Newtype1 with type 'a s = 'a Lwt.t
+  module Lwt: Higher.Newtype1 with type 'a s = 'a Lwt.t and type t = T.lwt
+
   type lwt = Lwt.t
 
-  type ('a, 'b) app = App of ('a, 'b) Higher.app
+  type ('a, 'b) app = ('a, 'b) T.app = App of ('a, 'b) Higher.app
   type 'a t = 'a T.t
 
   type ('a, 'b) either = ('a, 'b) T.either =
@@ -114,6 +115,9 @@ module Expr: sig
   type ('a, 'e) t
   (** Type of a typed expression. *)
 
+  type 'a lwt = ('a, Type.lwt) Type.app
+  (** The type for lwt expressions. *)
+
   (** {2 Constructors.} *)
 
   val unit: unit -> ('a, unit) t
@@ -153,6 +157,7 @@ module Expr: sig
 
   val lambda: (string * 'a Type.t) -> ('b * 'a, 'c) t -> ('b, 'a -> 'c) t
   val apply: ('a, 'b -> 'c) t -> ('a, 'b) t -> ('a, 'c) t
+  val return: 'a -> 'a lwt
   val eval: ('e, 'a) t -> 'e -> 'a
 
   (** {2 Infix operators.} *)

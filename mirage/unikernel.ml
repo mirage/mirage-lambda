@@ -112,12 +112,12 @@ module Main (B: BLOCK) (S: TCP) = struct
       let expected = Lambda.Type.(list AbstractTypes.cstruct @-> list AbstractTypes.cstruct @-> ret) in
       let outputs = List.init (Int64.to_int output) (fun _ -> Cstruct.create (Int64.to_int block_size)) in
 
-      (match ret with
-       | Lambda.Type.App (ret', Lambda.Type.Lwt) ->
+      (match Lambda.Type.is_lwt ret with
+       | true ->
          (match Lambda.L.type_and_eval ast expected with
           | Ok f -> f blocks outputs
           | Error e -> Fmt.kstrf (fun e -> Lwt.return_error (`Msg e)) "%a" Lambda.pp_error e)
-       | ret -> match Lambda.type_and_eval ast expected with
+       | false -> match Lambda.type_and_eval ast expected with
          | Ok f -> let x = f blocks outputs in Lwt.return_ok x
          | Error e -> Fmt.kstrf (fun e -> Lwt.return_error (`Msg e)) "%a" Lambda.pp_error e) >>= fun res ->
 

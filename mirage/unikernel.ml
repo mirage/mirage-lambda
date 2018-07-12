@@ -100,30 +100,71 @@ module Main (B: BLOCK) (S: TCP) = struct
       Log.err (fun l -> l "Got %a, closing" S.TCPV4.pp_write_error e);
       S.TCPV4.close flow
 
-  let eval ~blocks ~gamma ~primitives request =
+  let eval ~block_size ~blocks ~gamma ~primitives request =
     try
       Log.info (fun l -> l "Parse protobuf request:\n\n%a%!" pp_string request);
 
       let request = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string request) in
       let request = Lambda_protobuf.Pb.decode_request request in
-      let ast, ret, _ = Lambda_protobuf.request ~gamma ~primitives request in
+      let ast, ret, output = Lambda_protobuf.request ~gamma ~primitives request in
       let Lambda.Type.V ret = Lambda.Type.typ ret in
 
       let expected = Lambda.Type.(list AbstractTypes.cstruct @-> list AbstractTypes.cstruct @-> ret) in
+      let outputs = List.init (Int64.to_int output) (fun _ -> Cstruct.create (Int64.to_int block_size)) in
 
-      let res = match Lambda.type_and_eval ast expected with
-        | Ok f -> let x = f blocks [] in Ok x
-        | Error e -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e in
+      (match ret with
+       | Lambda.Type.App (ret', Lambda.Type.Lwt) ->
+         (match Lambda.L.type_and_eval ast expected with
+          | Ok f -> f blocks outputs
+          | Error e -> Fmt.kstrf (fun e -> Lwt.return_error (`Msg e)) "%a" Lambda.pp_error e)
+       | ret -> match Lambda.type_and_eval ast expected with
+         | Ok f -> let x = f blocks outputs in Lwt.return_ok x
+         | Error e -> Fmt.kstrf (fun e -> Lwt.return_error (`Msg e)) "%a" Lambda.pp_error e) >>= fun res ->
 
       let pp_value = Lambda.Type.pp_val ret in
 
       Logs.info (fun l -> l "Process and eval: %a => %a.\n%!"
                     Lambda.Parsetree.pp ast
                     (Fmt.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
-      Ok ()
+
+      (match res with
+       | Ok res ->
+         let res = Lambda.uncast ret res in
+         let res = Lambda_protobuf.value_to res in
+         let encoder = Lambda_protobuf.Rpc.Encoder.(default Reply res block_size output) in
+         Ok (outputs, encoder)
+       | Error _ as err -> err)
     with exn ->
       Logs.err (fun l -> l "Retrieve an error: %s" (Printexc.to_string exn));
       Error (`Msg (Printexc.to_string exn))
+
+  let send flow (blocks, encoder) =
+    let (>>?) = bind_err flow in
+    let open Lambda_protobuf in
+
+    let src = Cstruct.create 0x8000 in
+    let dst = Cstruct.create 0x8000 in
+
+    let rec loop encoder = match Rpc.Encoder.eval src dst encoder with
+      | `Await t ->
+        let block_n, block_consumed = Rpc.Encoder.block t in
+        let len = min (Cstruct.len src) (Cstruct.len (List.nth blocks (Int64.to_int block_n)) - block_consumed) in
+        Cstruct.blit (List.nth blocks (Int64.to_int block_n)) block_consumed src 0 len;
+
+        loop (Rpc.Encoder.refill 0 len t)
+      | `Flush t ->
+        S.TCPV4.write flow (Cstruct.sub dst 0 (Rpc.Encoder.used_out t)) >>? fun () ->
+        loop (Rpc.Encoder.flush 0 (Cstruct.len dst) t)
+      | `Error (_, err) ->
+        Log.err (fun f ->
+            f "Retrieve an error when we encode reply: %a." Rpc.Encoder.pp_error err);
+        Lwt.return_unit
+      | `End t ->
+        (if Rpc.Encoder.used_out t > 0
+         then S.TCPV4.write flow (Cstruct.sub dst 0 (Rpc.Encoder.used_out t))
+         else Lwt.return_ok ()) >>? fun () ->
+        Lwt.return_unit in
+    loop encoder
 
   let process ~gamma ~primitives flow =
     let dst, dst_port = S.TCPV4.dst flow in
@@ -132,10 +173,16 @@ module Main (B: BLOCK) (S: TCP) = struct
         f "new tcp connection from IP %a on port %d"
           Ipaddr.V4.pp_hum dst dst_port);
 
-    let (>>?) = bind_err flow in
     let buffer = Buffer.create 512 in
     let block_buffer = Cstruct_buffer.create 512 in
-    let decoder = Lambda_protobuf.Rpc.Decoder.default () in
+    let decoder = Lambda_protobuf.Rpc.(Decoder.default Request) in
+
+    let (>>?) v f = match v with
+      | Ok v -> f v
+      | Error (`Msg err) ->
+        Log.err (fun f ->
+            f "Got an evaluation error: %s." err);
+        Lwt.return_unit in
 
     let rec loop blocks decoder =
       S.TCPV4.read flow >>= function
@@ -153,7 +200,7 @@ module Main (B: BLOCK) (S: TCP) = struct
           Log.info (fun f -> f "State of the decoder: %a." Lambda_protobuf.Rpc.Decoder.pp decoder);
 
           match Lambda_protobuf.Rpc.Decoder.eval src decoder with
-          | `Await decoder -> decoder, blocks
+          | `Await decoder -> Lwt.return (decoder, blocks)
           | `Flush (decoder, `Protobuf, raw) ->
             Buffer.add_string buffer (Cstruct.to_string raw);
             go blocks (Lambda_protobuf.Rpc.Decoder.flush decoder)
@@ -176,7 +223,7 @@ module Main (B: BLOCK) (S: TCP) = struct
             Logs.warn (fun f ->
                 f "Retrieve an error: %a."
                   Lambda_protobuf.Rpc.Decoder.pp_error err);
-            (Lambda_protobuf.Rpc.Decoder.reset decoder, [])
+            Lwt.return (Lambda_protobuf.Rpc.Decoder.reset decoder, [])
           | `End decoder ->
 
             let blocks =
@@ -190,12 +237,17 @@ module Main (B: BLOCK) (S: TCP) = struct
                    ; block :: blocks)
               else blocks in
 
-            eval ~blocks:(List.map Cstruct.of_string (List.rev blocks)) ~gamma ~primitives (Buffer.contents buffer) |> fun res ->
+            eval
+              ~block_size:(Lambda_protobuf.Rpc.Decoder.block_size decoder)
+              ~blocks:(List.map (fun x -> Cstruct.of_string x) (List.rev blocks))
+              ~gamma
+              ~primitives
+              (Buffer.contents buffer)
+            >>? send flow >|= fun () ->
             Buffer.clear buffer;
             (Lambda_protobuf.Rpc.Decoder.reset decoder, []) in
 
-        let decoder, blocks = go blocks (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder) in
-        loop blocks decoder
+        go blocks (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder) >>= fun (decoder, blocks) -> loop blocks decoder
     in loop [] decoder
 
   let start b s () =

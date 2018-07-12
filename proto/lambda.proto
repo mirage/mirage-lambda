@@ -147,8 +147,8 @@ message Value {
         required Type typ_r = 3;
     }
     message Return {
-        required Type typ;
-        required Value value;
+        required Type typ = 1;
+        required Value value = 2;
     }
 
     oneof t {
@@ -165,6 +165,7 @@ message Value {
         Bytes bytes = 11;
         Result result = 12;
         Either either = 13;
+        Return return = 14;
     }
 }
 

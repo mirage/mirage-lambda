@@ -16,5 +16,6 @@ type t =
   | Pair of (t * t)
   | Either of (t, t) either * Parsetree.Type.t * Parsetree.Type.t
   | Result of (t, t) result * Parsetree.Type.t * Parsetree.Type.t
+  | Return of (t * Parsetree.Type.t)
 
 val unsafe_value: Parsetree.value -> t

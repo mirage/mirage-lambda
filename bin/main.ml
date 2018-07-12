@@ -62,7 +62,7 @@ let request ~block_n ~block_size ~block_output ?(gamma = []) ?(primitives = []) 
     Fmt.(pf stdout) "Ready to send: %a:%a.\n%!" Lambda.Parsetree.pp ast Lambda.Parsetree.Type.pp typ;
     let encoder = Lambda_protobuf.Rpc.Encoder.default
         Lambda_protobuf.Rpc.Encoder.Request
-        (Lambda_protobuf.make (ast, typ, Int64.of_int block_output))
+        (Lambda_protobuf.request_to (ast, typ, Int64.of_int block_output))
         (Int64.of_int block_size)
         (Int64.of_int block_n) in
     Ok encoder
@@ -148,14 +148,18 @@ let receive_reply ic decoder =
         then (clean_and_return buffer_block :: blocks)
         else blocks in
 
-      Fmt.(pf stdout) ">>> protobuf: %a.\n%!" pp_string (Buffer.contents buffer_protobuf);
+      Fmt.(pf stdout) ">>> protobuf:\n\n%a.\n%!" pp_string (Buffer.contents buffer_protobuf);
 
       let reply = Buffer.contents buffer_protobuf in
       let decoder = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string reply) in
-      let reply = Pb.decode_value decoder in
-      let Lambda.Parsetree.V { v; pp; _ } = value_from reply in
+      let reply = Pb.decode_reply decoder in
+      let reply = reply_from reply in
 
-      Fmt.(pf stdout) ">>> receive: %a.\n%!" pp v;
+      let pp ppf = function
+        | Ok (Lambda.Parsetree.V { v; pp; _ }) -> pp ppf v
+        | Error (`Msg err) -> Fmt.pf ppf "(Error: %s)" err in
+
+      Fmt.(pf stdout) ">>> receive: %a.\n%!" pp reply;
       List.iteri (fun idx block -> Fmt.(pf stdout) "block %d:\n\n%a\n%!" idx pp_string block) (List.rev blocks) in
   go [] decoder
 

@@ -355,7 +355,7 @@ module Encoder = struct
 
   type ('k, 'v) protobuf =
     | Request : (Lambda_types.request, request) protobuf
-    | Reply   : (Lambda_types.value,  reply) protobuf
+    | Reply   : (Lambda_types.reply,  reply) protobuf
 
   let default
     : type p k. (p, k) protobuf -> ?len:int -> p -> int64 -> int64 -> k t
@@ -363,7 +363,7 @@ module Encoder = struct
       let encoder = Pbrt.Encoder.create () in
       let () = match kind with
         | Request -> Lambda_pb.encode_request protobuf encoder
-        | Reply   -> Lambda_pb.encode_value protobuf encoder in
+        | Reply   -> Lambda_pb.encode_reply protobuf encoder in
       let p_tmp = Pbrt.Encoder.to_bytes encoder |> Bytes.unsafe_to_string in
       { i_off = 0
       ; i_pos = 0

@@ -244,3 +244,10 @@ message Request {
   required Type typ = 2;
   required int64 output = 3;
 }
+
+message Reply {
+  oneof t {
+      Value value = 1;
+      string error = 2;
+  }
+}

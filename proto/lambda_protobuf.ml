@@ -391,16 +391,28 @@ let rec expr_to : expr -> Types.expr = function
   | Swt { a; b; s; } -> Types.Swt { a = expr_to a; b = expr_to b; s = expr_to s; }
   | If (s, a, b) -> Types.If { a = expr_to a; b = expr_to b; s = expr_to s; }
 
-let request
+let request_from
   : ?gamma:Type.abstract Gamma.t ->
     ?primitives:primitive Primitives.t ->
     Types.request -> expr * Type.t * int64
   = fun ?gamma ?primitives request ->
     expr_from ?gamma ?primitives request.Types.expr, typ_from ?gamma request.Types.typ, request.Types.output
 
-let make
+let request_to
   : expr * Type.t * int64 -> Types.request
   = fun (expr, typ, output) ->
     { Types.expr = expr_to expr
     ; typ = typ_to typ
     ; output }
+
+let reply_from
+  : Types.reply -> (value, [ `Msg of string ]) result
+  = function
+    | Types.Value value -> Ok (value_from value)
+    | Types.Error err -> Error (`Msg err)
+
+let reply_to
+  : (value, [ `Msg of string ]) result -> Types.reply
+  = function
+    | Ok value -> Types.Value (value_to value)
+    | Error (`Msg err) -> Types.Error err

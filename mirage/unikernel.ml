@@ -77,7 +77,10 @@ module Main (B: BLOCK) (S: TCP) = struct
              ; primitive   "read_write"               [ info ]                                  Type.bool                            (fun b -> b.Mirage_block.read_write)
              ; primitive   "sector_size"              [ info ]                                  Type.int                             (fun b -> b.Mirage_block.sector_size)
              ; primitive   "size_sectors"             [ info ]                                  Type.int64                           (fun b -> b.Mirage_block.size_sectors)
-             ; L.primitive "Block.read"               Type.[ int64; list cstruct; ]             Type.(lwt (result unit error))       B.(read b)
+             ; L.primitive "Block.read"               Type.[ int64; list cstruct; ]             Type.(lwt (result unit error))       B.(fun off cs -> read b off cs >|= fun res -> match res with
+                 | Ok () -> res
+                 | Error err ->
+                 Fmt.epr "Got an error: %a.\n%!" B.pp_error err; res)
              ; L.primitive "Block.write"              Type.[ int64; list cstruct; ]             Type.(lwt (result unit write_error)) B.(write b)
              ; primitive   "Cstruct.to_string"        [ cstruct ]                               Type.string                          Cstruct.to_string
              ; primitive   "Cstruct.of_string"        [ Type.string ]                           cstruct                              (fun s -> Cstruct.of_string s)
@@ -118,7 +121,7 @@ module Main (B: BLOCK) (S: TCP) = struct
 
       let request = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string request) in
       let request = Lambda_protobuf.Pb.decode_request request in
-      let ast, ret, output = Lambda_protobuf.request ~gamma ~primitives request in
+      let ast, ret, output = Lambda_protobuf.request_from ~gamma ~primitives request in
       let Lambda.Type.V ret = Lambda.Type.typ ret in
 
       let expected = Lambda.Type.(list AbstractTypes.cstruct @-> list AbstractTypes.cstruct @-> ret) in
@@ -135,13 +138,10 @@ module Main (B: BLOCK) (S: TCP) = struct
                     Lambda.Parsetree.pp ast
                     (Fmt.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
 
-      (match res with
-       | Ok res ->
-         let res = Lambda.uncast ret res in
-         let res = Lambda_protobuf.value_to res in
-         let encoder = Lambda_protobuf.Rpc.Encoder.(default Reply res block_size output) in
-         Ok (outputs, encoder)
-       | Error _ as err -> err)
+      let res = Rresult.R.map (Lambda.uncast ret) res in
+      let res = Lambda_protobuf.reply_to res in
+      let encoder = Lambda_protobuf.Rpc.Encoder.(default Reply res block_size output) in
+      Ok (outputs, encoder)
     with exn ->
       Logs.err (fun l -> l "Retrieve an error: %s" (Printexc.to_string exn));
       Error (`Msg (Printexc.to_string exn))

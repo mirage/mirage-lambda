@@ -146,23 +146,24 @@ module Type = struct
 
   let rec pp_val: type a. a t -> a Fmt.t = fun t ppf x ->
     match t with
-    | Unit          -> Fmt.string ppf "()"
-    | Int           -> Fmt.int ppf x
-    | Int32         -> Fmt.int32 ppf x
-    | Int64         -> Fmt.int64 ppf x
-    | Bool          -> Fmt.bool ppf x
-    | String        -> Fmt.string ppf x
-    | Bytes         -> pp_bytes ppf x
-    | Lwt           -> Fmt.string ppf "<promise>"
-    | List a        -> Fmt.Dump.list (pp_val a) ppf x
-    | Option a      -> Fmt.Dump.option (pp_val a) ppf x
-    | Array a       -> Fmt.Dump.array (pp_val a) ppf x
-    | Abstract _    -> Fmt.pf ppf "<abstract>"
-    | Apply _       -> Fmt.string ppf "TODO: pp apply"
-    | Arrow _       -> Fmt.pf ppf "<function>"
-    | Pair (a, b)   -> Fmt.Dump.pair (pp_val a) (pp_val b) ppf x
-    | Result (a, b) -> Fmt.Dump.result ppf ~ok:(pp_val a) ~error:(pp_val b) x
-    | Either (a, b) -> match x with
+    | Unit           -> Fmt.string ppf "()"
+    | Int            -> Fmt.int ppf x
+    | Int32          -> Fmt.int32 ppf x
+    | Int64          -> Fmt.int64 ppf x
+    | Bool           -> Fmt.bool ppf x
+    | String         -> Fmt.string ppf x
+    | Bytes          -> pp_bytes ppf x
+    | Lwt            -> Fmt.string ppf "<promise>"
+    | List a         -> Fmt.Dump.list (pp_val a) ppf x
+    | Option a       -> Fmt.Dump.option (pp_val a) ppf x
+    | Array a        -> Fmt.Dump.array (pp_val a) ppf x
+    | Abstract _     -> Fmt.pf ppf "<abstract>"
+    | Apply (t, Lwt) -> Fmt.pf ppf "#promise(%a)" pp t
+    | Apply (v, t)   -> Fmt.pf ppf "#%a(%a)" pp t pp v
+    | Arrow _        -> Fmt.pf ppf "<function>"
+    | Pair (a, b)    -> Fmt.Dump.pair (pp_val a) (pp_val b) ppf x
+    | Result (a, b)  -> Fmt.Dump.result ppf ~ok:(pp_val a) ~error:(pp_val b) x
+    | Either (a, b)  -> match x with
       | L x -> Fmt.pf ppf "L %a" (pp_val a) x
       | R x -> Fmt.pf ppf "R %a" (pp_val b) x
 

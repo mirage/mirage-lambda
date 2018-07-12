@@ -229,9 +229,6 @@ module Type = struct
        | None -> false)
     | _, _ -> false
 
-  let is_lwt : type a. a t -> bool = function
-    | Apply (_, Lwt) -> true
-    | _ -> false
 end
 
 module Env = struct

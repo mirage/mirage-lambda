@@ -22,11 +22,29 @@ module Type: sig
   type lwt = Lwt.t
 
   type ('a, 'b) app = ('a, 'b) T.app = App of ('a, 'b) Higher.app
-  type 'a t = 'a T.t
 
   type ('a, 'b) either = ('a, 'b) T.either =
     | L of 'a
     | R of 'b
+
+  type 'a t = 'a T.t =
+    | Unit    : unit t
+    | Int     : int t
+    | Int32   : int32 t
+    | Int64   : int64 t
+    | Bool    : bool t
+    | String  : string t
+    | Bytes   : bytes t
+    | Lwt     : lwt t
+    | List    : 'a t -> 'a list t
+    | Array   : 'a t -> 'a array t
+    | Option  : 'a t -> 'a option t
+    | Abstract: 'a Eq.witness -> 'a t
+    | Apply   : 'a t * 'b t -> ('a, 'b) app t
+    | Arrow   : 'a t * 'b t -> ('a -> 'b) t
+    | Pair    : 'a t * 'b t -> ('a * 'b) t
+    | Either  : 'a t * 'b t -> ('a, 'b) either t
+    | Result  : 'a t * 'b t -> ('a, 'b) result t
 
   val equal: 'a t -> 'b t -> ('a, 'b) Eq.refl option
   (** [eq a b] proves than [a] and [b] have the same type if we return [Some
@@ -78,7 +96,6 @@ module Type: sig
 
   val eq: 'a t Parsetree.eq
   val pp: 'a t Fmt.t
-  val is_lwt: 'a t -> bool
 end
 
 module Value: sig

@@ -100,6 +100,18 @@ module Main (B: BLOCK) (S: TCP) = struct
       Log.err (fun l -> l "Got %a, closing" S.TCPV4.pp_write_error e);
       S.TCPV4.close flow
 
+  let result: type a. a Lambda.Type.t -> a -> (a, _) result =
+    fun ret x ->
+      match ret with
+      | Lambda.Type.Apply (ty, Lambda.Type.Lwt) ->
+        let Lambda.Type.App x = x in
+        let x = Lambda.Type.Lwt.prj x in
+        let x = Lwt_main.run x in
+        let x = Lambda.Expr.return x in
+        Ok x
+      | _ ->
+        Ok x
+
   let eval ~block_size ~blocks ~gamma ~primitives request =
     try
       Log.info (fun l -> l "Parse protobuf request:\n\n%a%!" pp_string request);
@@ -112,14 +124,10 @@ module Main (B: BLOCK) (S: TCP) = struct
       let expected = Lambda.Type.(list AbstractTypes.cstruct @-> list AbstractTypes.cstruct @-> ret) in
       let outputs = List.init (Int64.to_int output) (fun _ -> Cstruct.create (Int64.to_int block_size)) in
 
-      (match Lambda.Type.is_lwt ret with
-       | true ->
-         (match Lambda.L.type_and_eval ast expected with
-          | Ok f -> f blocks outputs
-          | Error e -> Fmt.kstrf (fun e -> Lwt.return_error (`Msg e)) "%a" Lambda.pp_error e)
-       | false -> match Lambda.type_and_eval ast expected with
-         | Ok f -> let x = f blocks outputs in Lwt.return_ok x
-         | Error e -> Fmt.kstrf (fun e -> Lwt.return_error (`Msg e)) "%a" Lambda.pp_error e) >>= fun res ->
+      let res = match Lambda.type_and_eval ast expected with
+        | Error e -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e
+        | Ok f    -> result ret (f blocks outputs)
+      in
 
       let pp_value = Lambda.Type.pp_val ret in
 

@@ -84,9 +84,10 @@
 %left     TIMES
 %left     BIND
 
-%left     S_OPTION S_LIST S_ARRAY
+%left     S_OPTION S_LIST S_ARRAY S_LWT
 %nonassoc LSQU VAR INT INT32 INT64 STRING LPAR BOOL REC R L IF FUN FST SND
-          OK ERROR SOME RETURN
+          OK ERROR SOME RETURN NONE GET UNIT
+          S_STRING S_INT S_INT32 S_INT64 S_BOOL
 %nonassoc APP
 
 %left BAR
@@ -123,35 +124,42 @@ expr_seq:
         let b = b prims gams ctx in
         let_var t v e b }
 
-expr:
+base_expr:
   | LPAR e=expr RPAR        { e }
   | i=INT                   { fun _ _ _ -> int i }
   | i=INT32                 { fun _ _ _ -> int32 i }
   | i=INT64                 { fun _ _ _ -> int64 i }
   | s=STRING                { fun _ _ _ -> string s }
   | b=BOOL                  { fun _ _ _ -> if b then true_ else false_ }
-  | R t=typ e=expr          { fun p g c -> right (t g) (e p g c) }
-  | L e=expr t=typ          { fun p g c -> left (t g) (e p g c) }
-  | OK e=expr t=typ         { fun p g c -> ok (t g) (e p g c) }
-  | ERROR t=typ e=expr      { fun p g c -> error (t g) (e p g c) }
-  | RETURN e=expr           { fun p g c -> return (e p g c) }
-  | x=expr BIND f=expr      { fun p g c -> bind (x p g c) (f p g c) }
-  | SOME e=expr             { fun p g c -> some (e p g c) }
-  | LPAR NONE COLON t=typ S_OPTION RPAR
-    { fun _ g _ -> none (t g) }
-  | GET i=INT e=expr        { fun p g c -> get i (e p g c) }
-  | FST e=expr              { fun p g c -> fst (e p g c) }
-  | SND e=expr              { fun p g c -> snd (e p g c) }
-  | LPAR LSQU BAR BAR RSQU COLON t=typ S_ARRAY RPAR
-                            { fun _ g _ -> array ~typ:(t g) [||] }
+  | v=VAR                   { fun prims _ ctx -> resolve_name v prims ctx }
+  | v=VAR DOLLAR i=INT      {
+      fun prims _ ctx ->
+        let id = index v ctx in
+        if Pervasives.(id = Some i) then resolve_name v prims ctx
+        else err "%s$%d should have id %a" v i Fmt.(option int) id }
+
+
+expr:
+  | e=base_expr                  { e }
+  | GET i=INT e=base_expr        { fun p g c -> get i (e p g c) }
+  | R t=base_typ e=base_expr     { fun p g c -> right (t g) (e p g c) }
+  | L e=base_expr t=base_typ     { fun p g c -> left (t g) (e p g c) }
+  | OK e=base_expr t=base_typ    { fun p g c -> ok (t g) (e p g c) }
+  | ERROR t=base_typ e=base_expr { fun p g c -> error (t g) (e p g c) }
+  | RETURN e=base_expr           { fun p g c -> return (e p g c) }
+  | x=expr BIND f=expr           { fun p g c -> bind (x p g c) (f p g c) }
+  | SOME e=base_expr             { fun p g c -> some (e p g c) }
+  | NONE t=base_typ              { fun _ g _ -> none (t g) }
+  | FST e=base_expr              { fun p g c -> fst (e p g c) }
+  | SND e=base_expr              { fun p g c -> snd (e p g c) }
+  | LSQU BAR BAR RSQU t=base_typ { fun _ g _ -> array ~typ:(t g) [||] }
   | LSQU BAR l=list BAR RSQU
     { fun p g c ->
       let l = List.map (fun e -> e p g c) l in
       array (Array.of_list l) }
-  | LPAR LSQU RSQU COLON t=typ S_LIST RPAR
-                            { fun _ g _ -> list ~typ:(t g) [] }
-  | LSQU l=list RSQU        { fun p g c -> list (List.map (fun e -> e p g c) l) }
-  | a=expr COMMA b=expr     { fun p g c -> pair (a p g c) (b p g c) }
+  | LSQU RSQU t=base_typ         { fun _ g _ -> list ~typ:(t g) [] }
+  | LSQU l=list RSQU             { fun p g c -> list (List.map (fun e -> e p g c) l) }
+  | a=expr COMMA b=expr          { fun p g c -> pair (a p g c) (b p g c) }
   | IF i=expr THEN t=expr ELSE e=expr
     { fun prims gams ctx ->
         let i = i prims gams ctx in
@@ -177,7 +185,7 @@ expr:
         let e = e (add_prim a t prims) gams (add_ctx [a] ctx) in
         let b = b prims gams (n :: ctx) in
         let_rec t n a e b }
-  | REC LPAR a=arg RPAR COLON t=typ ARROW e=expr
+  | REC LPAR a=arg RPAR COLON t=base_typ ARROW e=expr
     { fun prims gams ctx ->
         let a = a gams in
         let e = e prims gams (add_ctx [a] ctx) in
@@ -187,12 +195,6 @@ expr:
         let a = a gams in
         let e = e prims gams (add_ctx a ctx) in
         lambda a e }
-  | v=VAR                   { fun prims _ ctx -> resolve_name v prims ctx }
-  | v=VAR DOLLAR i=INT      {
-      fun prims _ ctx ->
-        let id = index v ctx in
-        if Pervasives.(id = Some i) then resolve_name v prims ctx
-        else err "%s$%d should have id %a" v i Fmt.(option int) id }
   | a=expr f=binop b=expr   {
       fun prims gams ctx ->
       let a = a prims gams ctx in
@@ -210,31 +212,34 @@ expr:
   | TIMES { ( * ) }
   | EQ    { ( = ) }
 
+base_typ:
+  | LPAR a=typ RPAR  { a }
+  | UNIT             { fun _ -> Type.unit }
+  | S_INT            { fun _ -> Type.int }
+  | S_INT32          { fun _ -> Type.int32 }
+  | S_INT64          { fun _ -> Type.int64 }
+  | S_BOOL           { fun _ -> Type.bool }
+  | S_STRING         { fun _ -> Type.string }
+  | S_LWT            { fun _ -> Type.lwt }
+  | v=VAR            { fun gams ->
+                       try let Type.A { name; _} = (List.assoc v gams) in
+                           if String.equal name v
+                           then Type.unsafe_abstract (List.assoc v gams)
+                           else err "Mismatch abstract type: %s <> %s (expected)" v name
+                       with _ ->
+                         let pp ppf (Type.A w) = Fmt.string ppf w.Eq.name in
+                         err "Invalid abstract type: %s (%a)" v Fmt.(list (pair string pp)) gams }
+
 typ:
-  | UNIT              { fun _ -> Type.unit }
-  | S_INT             { fun _ -> Type.int }
-  | S_INT32           { fun _ -> Type.int32 }
-  | S_INT64           { fun _ -> Type.int64 }
-  | S_BOOL            { fun _ -> Type.bool }
-  | S_STRING          { fun _ -> Type.string }
-  | S_LWT             { fun _ -> Type.lwt }
+  | ty=base_typ       { ty }
   | a=typ S_LIST      { fun g -> Type.list (a g) }
   | a=typ S_ARRAY     { fun g -> Type.array (a g) }
   | a=typ S_OPTION    { fun g -> Type.option (a g) }
   | a=typ ARROW b=typ { fun g -> Type.((a g) @-> (b g)) }
   | a=typ TIMES b=typ { fun g -> Type.((a g) ** (b g)) }
   | a=typ BAR b=typ   { fun g -> Type.((a g) || (b g)) }
-  | a=typ b=typ %prec APP { fun g -> Type.apply (a g) (b g) }
-  | LPAR a=typ RPAR   { a }
   | LPAR a=typ COMMA b=typ RPAR S_RESULT { fun g -> Type.result (a g) (b g) }
-  | v=VAR             { fun gams ->
-                        try let Type.A { name; _} = (List.assoc v gams) in
-                            if String.equal name v
-                            then Type.unsafe_abstract (List.assoc v gams)
-                            else err "Mismatch abstract type: %s <> %s (expected)" v name
-                        with _ ->
-                          let pp ppf (Type.A w) = Fmt.string ppf w.Eq.name in
-                          err "Invalid abstract type: %s (%a)" v Fmt.(list (pair string pp)) gams }
+  | a=typ b=typ %prec APP { fun g -> Type.apply (a g) (b g) }
 
 list:
   | x=separated_nonempty_list(SEMI, expr) { x }

@@ -183,12 +183,12 @@ let pp ppf t =
     match t with
     | Var n -> Fmt.pf ppf "%s$%d" (nth ctx n) n.id
     | Val c -> pp_value ppf c
-    | Lst (t, [])     -> Fmt.pf ppf "([]: %a list)" pp_typ_opt t
+    | Lst (t, [])     -> Fmt.pf ppf "[] %a" pp_typ_opt t
     | Lst (_, l)      -> Fmt.Dump.list pp ppf l
-    | Arr (t, [||])   -> Fmt.pf ppf "([||]: %a array)" pp_typ_opt t
+    | Arr (t, [||])   -> Fmt.pf ppf "[||] %a" pp_typ_opt t
     | Arr (_, a)      -> Fmt.Dump.array pp ppf a
     | Opt (_, Some x) -> Fmt.Dump.option pp ppf (Some x)
-    | Opt (t, None  ) -> Fmt.pf ppf "(None: %a option)" pp_typ_opt t
+    | Opt (t, None  ) -> Fmt.pf ppf "None %a" pp_typ_opt t
     | Ret e           -> Fmt.pf ppf "(return (%a))" pp e
     | Bnd (x, f)      -> Fmt.pf ppf "(%a >>= %a)" pp x pp f
     | Prm { name; _ } -> Fmt.string ppf name

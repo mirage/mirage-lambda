@@ -224,14 +224,14 @@ let test_parse_expr () =
   check "1 + 1 = 2" bool true;
   check "(1 = 2)" bool false;
   check "[1;2]" (list int) [1; 2];
-  check "([]: string list)" (list string) [];
+  check "[] string" (list string) [];
   check "[|1;2|]" (array int) [|1; 2|];
-  check "([||]: bool array)" (array bool) [||];
-  check "(None: int option)" (option int) None;
+  check "[||] bool" (array bool) [||];
+  check "None int" (option int) None;
   check "Ok 1 bool" (result int bool) (Ok 1);
   check "Error int true" (result int bool) (Error true);
   check "Some \"foo\"" (option string) (Some "foo");
-  check "L (None: int option) string" (either (option int) string) (L None);
+  check "L (None int) string" (either (option int) string) (L None);
   check "(fun (x:int) -> x + 1) 1" int 2;
   check "(fun (x:int, y:bool) -> y) 1 false" bool false;
   check {|

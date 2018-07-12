@@ -176,6 +176,7 @@ let primitives =
   Lambda.[
     L.primitive "Block.read" Type.[ int64; list cstruct; ] Type.(lwt (result unit error)) niet2;
     primitive "Cstruct.to_string" [cstruct] Type.string niet1;
+    primitive "Cstruct.blit" Type.[ cstruct; int; cstruct; int; int; ] Type.unit (fun _ _ _ _ -> assert false);
   ]
 
 let repl ?(block_n = 0) ?(block_size = 0) ~block_output (socketo, socketi) blocks =

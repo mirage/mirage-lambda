@@ -78,6 +78,7 @@ module Type: sig
 
   val eq: 'a t Parsetree.eq
   val pp: 'a t Fmt.t
+  val is_lwt: 'a t -> bool
 end
 
 module Value: sig

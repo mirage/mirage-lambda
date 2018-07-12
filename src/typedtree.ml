@@ -382,6 +382,7 @@ module Expr = struct
     | R  : 'a Type.t -> ('b, ('a, 'b) Type.either) unop
     | Oky: 'b Type.t -> ('a, ('a, 'b) result) unop
     | Err: 'a Type.t -> ('b, ('a, 'b) result) unop
+    | Get: int -> ('a list, 'a) unop
 
   let pp_unop : type u v. (u, v) unop Fmt.t = fun ppf -> function
     | Fst    -> Fmt.string ppf "fst"
@@ -390,6 +391,7 @@ module Expr = struct
     | R ty   -> Fmt.pf ppf "R:%a" Type.pp ty
     | Oky ty -> Fmt.pf ppf "Ok:%a" Type.pp ty
     | Err ty -> Fmt.pf ppf "Error:%a" Type.pp ty
+    | Get i  -> Fmt.pf ppf "Get:%d" i
 
   type ('u, 'v) nnop =
     | Arr: 'a Type.t -> ('a, 'a array) nnop
@@ -493,6 +495,7 @@ module Expr = struct
     | Uno (Err _, x) -> Error (eval x e)
     | Uno (Fst, x) -> fst (eval x e)
     | Uno (Snd, x) -> snd (eval x e)
+    | Uno (Get i, x) -> List.nth (eval x e) i
     | Nar (Arr _, lst) -> List.map (fun x -> eval x e) lst |> Array.of_list
     | Opt (_, Some x) -> Some (eval x e)
     | Opt (_, None)   -> None
@@ -576,6 +579,7 @@ module Expr = struct
     | Prm x            -> P.prim (Prim.untype x)
     | Uno (Fst, x)     -> P.fst (untype x)
     | Uno (Snd, x)     -> P.snd (untype x)
+    | Uno (Get i, x)   -> P.get i (untype x)
     | Uno (L r, x)     -> P.left (Type.untype r) (untype x)
     | Uno (R l, x)     -> P.right (Type.untype l) (untype x)
     | Uno (Oky e, x)   -> P.ok (Type.untype e) (untype x)
@@ -752,6 +756,10 @@ module Expr = struct
         (match Env.equal g' g'' with
          | Some Eq.Refl -> Expr (Uno (Err tl', x'), g', Result (tl', tx'))
          | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+      | Uno (Get i, x) ->
+        (match aux x g with
+         | Expr (x', g'', Type.List tx') -> Expr (Uno (Get i, x'), g'', tx')
+         | _ -> failwith "TODO")
       | Uno (Fst, x) ->
         (match aux x g with
          | Expr (x', g'', Type.Pair (ta', _)) ->

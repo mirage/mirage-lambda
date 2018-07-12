@@ -122,7 +122,7 @@ type arithmetic = [ `Add | `Sub | `Mul | `Div ]
 [@@deriving show, eq]
 
 type binop = [ arithmetic | `Pair | `Eq ]
-and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
+and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Get of int
 and var = { id : int }
 and expr =
   | Val of value
@@ -203,6 +203,8 @@ let pp ppf t =
     | App (f, a) ->
       Fmt.pf ppf "@[(@[%a@]@ @[%a@])@]" pp f pp a
     | Bin (op, a, b) -> pp_op pp op ppf (a, b)
+    | Uno (Get i, a) ->
+      Fmt.pf ppf "@[<2>(get@ %d @[%a@])@]" i pp a
     | Uno (Fst, a) ->
       Fmt.pf ppf "@[<2>(fst@ @[%a@])@]" pp a
     | Uno (Snd, a) ->
@@ -269,6 +271,7 @@ let left rtyp x = Uno (L rtyp, x)
 let right ltyp x = Uno (R ltyp, x)
 let fst x = Uno (Fst, x)
 let snd x = Uno (Snd, x)
+let get i x = Uno (Get i, x)
 
 let let_var t n x y = Let (t, n, x, y)
 

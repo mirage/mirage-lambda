@@ -68,7 +68,7 @@
 %token L R
 %token APP
 %token DOLLAR
-%token FST SND
+%token FST SND GET
 
 %token S_INT S_INT32 S_INT64 S_BOOL S_STRING S_LIST S_ARRAY S_OPTION S_RESULT S_LWT
 %token ARROW BAR
@@ -139,6 +139,7 @@ expr:
   | SOME e=expr             { fun p g c -> some (e p g c) }
   | LPAR NONE COLON t=typ S_OPTION RPAR
     { fun _ g _ -> none (t g) }
+  | GET i=INT e=expr        { fun p g c -> get i (e p g c) }
   | FST e=expr              { fun p g c -> fst (e p g c) }
   | SND e=expr              { fun p g c -> snd (e p g c) }
   | LPAR LSQU BAR BAR RSQU COLON t=typ S_ARRAY RPAR

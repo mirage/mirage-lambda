@@ -171,7 +171,12 @@ let gamma =
   ; "Block.error", (Lambda.Type.abstract_injection error) ]
 
 let primitives =
-  Lambda.[ L.primitive "Block.read" Type.[ int64; list cstruct; ] Type.(lwt (result unit error)) (fun _ _ -> assert false) ]
+  let niet1 _ = assert false in
+  let niet2 _ _ = assert false in
+  Lambda.[
+    L.primitive "Block.read" Type.[ int64; list cstruct; ] Type.(lwt (result unit error)) niet2;
+    primitive "Cstruct.to_string" [cstruct] Type.string niet1;
+  ]
 
 let repl ?(block_n = 0) ?(block_size = 0) ~block_output (socketo, socketi) blocks =
   let rec go () =

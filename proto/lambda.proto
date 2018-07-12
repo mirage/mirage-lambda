@@ -146,6 +146,10 @@ message Value {
         required Type typ_l = 2;
         required Type typ_r = 3;
     }
+    message Return {
+        required Type typ;
+        required Value value;
+    }
 
     oneof t {
         Unit unit = 1;

@@ -150,6 +150,7 @@ message Value {
         required Type typ = 1;
         required Value value = 2;
     }
+    message Abstract { }
 
     oneof t {
         Unit unit = 1;
@@ -166,6 +167,7 @@ message Value {
         Result result = 12;
         Either either = 13;
         Return return = 14;
+        Abstract abstract = 15;
     }
 }
 

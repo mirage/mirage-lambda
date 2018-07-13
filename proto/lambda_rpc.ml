@@ -118,6 +118,8 @@ module Decoder = struct
   let block src t n consumed =
     if consumed = t.block_size
     then flush t (`Block n) consumed (Cstruct.sub t.i_tmp 0 0)
+    else if (t.i_len - t.i_pos) = 0
+    then await t
     else
       let len = min (Cstruct.len t.i_tmp) (t.i_len - t.i_pos) in
       let len = min len Int64.(to_int (t.block_size - consumed)) in
@@ -126,12 +128,9 @@ module Decoder = struct
 
   let proto src t consumed =
     if consumed = t.proto_size
-    then Cont { t with state =
-                         if t.block_n = 0L
-                         then End
-                         else Stp { kind = `Protobuf
-                                  ; consumed
-                                  ; buf = Cstruct.sub t.i_tmp 0 (Int64.to_int consumed) } }
+    then flush t `Protobuf consumed (Cstruct.sub t.i_tmp 0 0)
+    else if (t.i_len - t.i_pos) = 0
+    then await t
     else
       let len = min (Cstruct.len t.i_tmp) (t.i_len - t.i_pos) in
       let len = min len Int64.(to_int (t.proto_size - consumed)) in

@@ -121,8 +121,8 @@ type primitive =
 type arithmetic = [ `Add | `Sub | `Mul | `Div ]
 [@@deriving show, eq]
 
-type binop = [ arithmetic | `Pair | `Eq ]
-and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Get of int
+type binop = [ arithmetic | `Pair | `Eq | `Get ]
+and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
 and var = { id : int }
 and expr =
   | Val of value
@@ -158,6 +158,9 @@ let pp_params ppf ts =
   let aux ppf (n, t) = Fmt.pf ppf "%s: %a" n Type.pp t in
   Fmt.pf ppf "@[<2>(%a)@]" Fmt.(list ~sep:(unit ",@ ") aux) ts
 
+let pp_get pp ppf (x, y) =
+  Fmt.pf ppf "@[Get %a %a@]" pp x pp y
+
 let nth ctx n =
   try List.nth ctx n.id
   with Failure _ ->
@@ -166,6 +169,7 @@ let nth ctx n =
 let pp_op pp x =
   match x with
   | `Pair -> Fmt.Dump.pair pp pp
+  | `Get  -> pp_get pp
   | `Eq | #arithmetic as x ->
     let infix = match x with
       | `Add -> "+"
@@ -203,8 +207,6 @@ let pp ppf t =
     | App (f, a) ->
       Fmt.pf ppf "@[(@[%a@]@ @[%a@])@]" pp f pp a
     | Bin (op, a, b) -> pp_op pp op ppf (a, b)
-    | Uno (Get i, a) ->
-      Fmt.pf ppf "@[<2>(get@ %d @[%a@])@]" i pp a
     | Uno (Fst, a) ->
       Fmt.pf ppf "@[<2>(fst@ @[%a@])@]" pp a
     | Uno (Snd, a) ->
@@ -255,6 +257,7 @@ let some e = option (Some e)
 let ok t e = Uno (Ok t, e)
 let error t e = Uno (Error t, e)
 let pair a b = Bin (`Pair, a, b)
+let get i x = Bin (`Get, i, x)
 let apply f a = App (f, a)
 let var id = Var { id }
 let match_ s a b = Swt {a; b; s}
@@ -271,7 +274,6 @@ let left rtyp x = Uno (L rtyp, x)
 let right ltyp x = Uno (R ltyp, x)
 let fst x = Uno (Fst, x)
 let snd x = Uno (Snd, x)
-let get i x = Uno (Get i, x)
 
 let let_var t n x y = Let (t, n, x, y)
 

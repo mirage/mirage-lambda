@@ -93,6 +93,7 @@ let binop_from : Types.binop -> binop = function
   | Types.Div -> `Div
   | Types.Pair -> `Pair
   | Types.Eq -> `Eq
+  | Types.Get -> `Get
 
 let binop_to : binop -> Types.binop = function
   | `Add -> Types.Add
@@ -101,6 +102,7 @@ let binop_to : binop -> Types.binop = function
   | `Div -> Types.Div
   | `Pair -> Types.Pair
   | `Eq -> Types.Eq
+  | `Get -> Types.Get
 
 let unop_from : ?gamma:Type.abstract Gamma.t -> Types.unop -> unop = fun ?gamma -> function
   | Types.Fst -> Fst
@@ -109,7 +111,6 @@ let unop_from : ?gamma:Type.abstract Gamma.t -> Types.unop -> unop = fun ?gamma 
   | Types.R { value; } -> R (typ_from ?gamma value)
   | Types.Ok { value; } -> Ok (typ_from ?gamma value)
   | Types.Error { value; } -> Error (typ_from ?gamma value)
-  | Types.Get { value; } -> Get (Int32.to_int value)
 
 let unop_to : unop -> Types.unop = function
   | Fst -> Types.Fst
@@ -118,7 +119,6 @@ let unop_to : unop -> Types.unop = function
   | R t -> Types.R { value = typ_to t }
   | Ok t -> Types.Ok { value = typ_to t }
   | Error t -> Types.Error { value = typ_to t }
-  | Get i -> Types.Get { value = Int32.of_int i }
 
 let rec value_from : Types.value -> value = function
   | Types.Unit ->
@@ -343,8 +343,8 @@ let expr_from
         pair (go a) (go b)
       | Types.Bin { op = Types.Eq; a; b; } ->
         (go a) = (go b) (* XXX(dinosaure): we use Parsetree.(=). *)
-      | Types.Uno { op = Types.Get { value }; x } ->
-        get (Int32.to_int value) (go x)
+      | Types.Bin { op = Types.Get; a; b } ->
+        get (go a) (go b)
       | Types.Uno { op = Types.Fst; x; } ->
         fst (go x)
       | Types.Uno { op = Types.Snd; x; } ->

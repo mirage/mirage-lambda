@@ -141,7 +141,7 @@ base_expr:
 
 expr:
   | e=base_expr                  { e }
-  | GET i=INT e=base_expr        { fun p g c -> get i (e p g c) }
+  | GET i=base_expr e=base_expr  { fun p g c -> get (i p g c) (e p g c) }
   | R t=base_typ e=base_expr     { fun p g c -> right (t g) (e p g c) }
   | L e=base_expr t=base_typ     { fun p g c -> left (t g) (e p g c) }
   | OK e=base_expr t=base_typ    { fun p g c -> ok (t g) (e p g c) }

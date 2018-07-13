@@ -147,11 +147,11 @@ and primitive =
   ; exp  : value list -> value }
 (** A user-defined primitive. *)
 
-and binop =  [ arithmetic | `Pair | `Eq ]
+and binop =  [ arithmetic | `Pair | `Eq | `Get ]
 (** Binary operations. *)
 
 (** Unary operations. *)
-and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Get of int
+and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
 
 (** {2 Pretty-printers.} *)
 
@@ -193,10 +193,10 @@ val of_value: value -> expr
 val lambda: (string * typ) list -> expr -> expr
 
 val pair: expr -> expr -> expr
+val get: expr -> expr -> expr
 
 val fst: expr -> expr
 val snd: expr -> expr
-val get: int -> expr -> expr
 
 val left: typ -> expr -> expr
 val right: typ -> expr -> expr

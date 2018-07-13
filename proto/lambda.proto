@@ -76,6 +76,7 @@ enum Binop {
     DIV = 4;
     PAIR = 5;
     EQ = 6;
+    GET = 7;
 }
 
 message Unop {
@@ -85,7 +86,6 @@ message Unop {
     message R { required Type value = 1; }
     message Ok { required Type value = 1; }
     message Error { required Type value = 1; }
-    message Get { required int32 value = 1; }
 
     oneof t {
         Fst fst = 1;
@@ -94,7 +94,6 @@ message Unop {
         R r = 4;
         Ok ok = 5;
         Error error = 6;
-        Get get = 7;
     }
 }
 

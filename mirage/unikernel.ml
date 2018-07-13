@@ -121,7 +121,7 @@ module Main (B: BLOCK) (S: TCP) = struct
 
       let request = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string request) in
       let request = Lambda_protobuf.Pb.decode_request request in
-      let ast, ret, output = Lambda_protobuf.request_from ~gamma ~primitives request in
+      let ast, ret, output = Lambda_protobuf.of_request ~gamma ~primitives request in
       let Lambda.Type.V ret = Lambda.Type.typ ret in
 
       let expected = Lambda.Type.(list AbstractTypes.cstruct @-> list AbstractTypes.cstruct @-> ret) in
@@ -139,8 +139,9 @@ module Main (B: BLOCK) (S: TCP) = struct
                     (Fmt.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
 
       let res = Rresult.R.map (Lambda.uncast ret) res in
-      let res = Lambda_protobuf.reply_to res in
+      let res = Lambda_protobuf.to_reply res in
       let encoder = Lambda_protobuf.Rpc.Encoder.(default Reply res block_size output) in
+
       Ok (outputs, encoder)
     with exn ->
       Logs.err (fun l -> l "Retrieve an error: %s" (Printexc.to_string exn));
@@ -253,10 +254,14 @@ module Main (B: BLOCK) (S: TCP) = struct
               (Buffer.contents buffer)
             >>? send flow >|= fun () ->
             Buffer.clear buffer;
-            (Lambda_protobuf.Rpc.Decoder.reset decoder, []) in
+            (Lambda_protobuf.Rpc.Decoder.reset decoder, [])
+        in
 
-        go blocks (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder) >>= fun (decoder, blocks) -> loop blocks decoder
-    in loop [] decoder
+        go blocks (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder)
+        >>= fun (decoder, blocks) ->
+        loop blocks decoder
+    in
+    loop [] decoder
 
   let start b s () =
     let primitives, gamma = make_environment b in

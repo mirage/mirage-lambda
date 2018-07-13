@@ -62,7 +62,7 @@ let request ~block_n ~block_size ~block_output ?(gamma = []) ?(primitives = []) 
     Fmt.(pf stdout) "Ready to send: %a:%a.\n%!" Lambda.Parsetree.pp ast Lambda.Parsetree.Type.pp typ;
     let encoder = Lambda_protobuf.Rpc.Encoder.default
         Lambda_protobuf.Rpc.Encoder.Request
-        (Lambda_protobuf.request_to (ast, typ, Int64.of_int block_output))
+        (Lambda_protobuf.to_request (ast, typ, Int64.of_int block_output))
         (Int64.of_int block_size)
         (Int64.of_int block_n) in
     Ok encoder
@@ -153,7 +153,7 @@ let receive_reply ic decoder =
       let reply = Buffer.contents buffer_protobuf in
       let decoder = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string reply) in
       let reply = Pb.decode_reply decoder in
-      let reply = reply_from reply in
+      let reply = of_reply reply in
 
       let pp ppf = function
         | Ok (Lambda.Parsetree.V { v; pp; _ }) -> pp ppf v

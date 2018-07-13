@@ -120,7 +120,7 @@ let unop_to : unop -> Types.unop = function
   | Ok t -> Types.Ok { value = typ_to t }
   | Error t -> Types.Error { value = typ_to t }
 
-let rec value_from : Types.value -> value = function
+let rec of_value : Types.value -> value = function
   | Types.Unit ->
     V { v = (); t = Unit;
         pp = (fun ppf () -> Fmt.pf ppf "()"); eq = (fun () () -> true); }
@@ -135,9 +135,10 @@ let rec value_from : Types.value -> value = function
   | Types.String { value; } ->
     V { v = value; t = String; pp = Fmt.string; eq = Pervasives.(=) }
   | Types.Bytes { value; } ->
-    V { v = Bytes.of_string value; t = Bytes; pp = Fmt.using Bytes.unsafe_to_string Fmt.string; eq = Pervasives.(=) }
+    V { v = Bytes.of_string value; t = Bytes;
+        pp = Fmt.using Bytes.unsafe_to_string Fmt.string; eq = Pervasives.(=) }
   | Types.Option { typ; value = Some value; } ->
-    let V { v; t; pp; eq; } = value_from value in
+    let V { v; t; pp; eq; } = of_value value in
     let Lambda.Type.V t' = Lambda.Type.typ (typ_from typ) in
     (match Lambda.Type.equal t t' with
      | Some Lambda.Eq.Refl -> V { v = Some v; t = Option t;
@@ -173,7 +174,7 @@ let rec value_from : Types.value -> value = function
                      Lambda.Type.pp t
                      Lambda.Type.pp (List t'))
       | x :: r ->
-        let V { v = x; t; pp = _; eq = _; } = value_from x in
+        let V { v = x; t; pp = _; eq = _; } = of_value x in
         let V { v = acc; t = tacc; pp; eq; } = acc in
         (match Lambda.Type.equal t t', Lambda.Type.equal (List t) tacc with
          | Some Lambda.Eq.Refl, Some Lambda.Eq.Refl ->
@@ -203,7 +204,7 @@ let rec value_from : Types.value -> value = function
                      Lambda.Type.pp t
                      Lambda.Type.pp (List t'))
       | x :: r ->
-        let V { v = x; t; pp = _; eq = _; } = value_from x in
+        let V { v = x; t; pp = _; eq = _; } = of_value x in
         let V { v = acc; t = tacc; pp; eq; } = acc in
         (match Lambda.Type.equal t t', Lambda.Type.equal (List t) tacc with
          | Some Lambda.Eq.Refl, Some Lambda.Eq.Refl ->
@@ -213,62 +214,74 @@ let rec value_from : Types.value -> value = function
                      Lambda.Type.pp t) in
     go (V { v = []; t = List t'; pp; eq; }) value |> cast
   | Types.Pair { a; b; } ->
-    let V { v = a; t = ta; pp = ppa; eq = eqa; } = value_from a in
-    let V { v = b; t = tb; pp = ppb; eq = eqb; } = value_from b in
+    let V { v = a; t = ta; pp = ppa; eq = eqa; } = of_value a in
+    let V { v = b; t = tb; pp = ppb; eq = eqb; } = of_value b in
     V { v = (a, b); t = Pair (ta, tb); pp = Fmt.pair ppa ppb; eq = pair_eq ~eqa ~eqb }
   | Types.Either { value = Types.Left { value; }; typ_l; typ_r; } ->
-    let V { v; t; pp = ppl; eq = eql; } = value_from value in
+    let V { v; t; pp = ppl; eq = eql; } = of_value value in
     let Lambda.Type.V tl = Lambda.Type.typ (typ_from typ_l) in
     let Lambda.Type.V tr = Lambda.Type.typ (typ_from typ_r) in
 
     let ppr, eqr = Lambda.Type.pp_val tr, Lambda.Type.eq_val tr in
 
     (match Lambda.Type.equal t tl with
-     | Some Lambda.Eq.Refl -> V { v = Lambda.Value.L v; t = Either (tl, tr); pp = pp_either ~ppl ~ppr; eq = either_eq ~eql ~eqr }
+     | Some Lambda.Eq.Refl ->
+       V { v = Lambda.Value.L v; t = Either (tl, tr); pp = pp_either ~ppl ~ppr;
+           eq = either_eq ~eql ~eqr }
      | None -> Fmt.invalid_arg "Cannot unify %a and %a"
                  Lambda.Type.pp t
                  Lambda.Type.pp tl)
   | Types.Either { value = Types.Right { value; }; typ_l; typ_r; } ->
-    let V { v; t; pp = ppr; eq = eqr; } = value_from value in
+    let V { v; t; pp = ppr; eq = eqr; } = of_value value in
     let Lambda.Type.V tl = Lambda.Type.typ (typ_from typ_l) in
     let Lambda.Type.V tr = Lambda.Type.typ (typ_from typ_r) in
 
     let ppl, eql = Lambda.Type.pp_val tl, Lambda.Type.eq_val tl in
 
     (match Lambda.Type.equal t tr with
-     | Some Lambda.Eq.Refl -> V { v = Lambda.Value.R v; t = Either (tl, tr); pp = pp_either ~ppl ~ppr; eq = either_eq ~eql ~eqr }
+     | Some Lambda.Eq.Refl ->
+       V { v = Lambda.Value.R v; t = Either (tl, tr); pp = pp_either ~ppl ~ppr;
+           eq = either_eq ~eql ~eqr }
      | None -> Fmt.invalid_arg "Cannot unify %a and %a"
                  Lambda.Type.pp t
                  Lambda.Type.pp tl)
   | Types.Result { value = Types.Ok { value; }; typ_ok; typ_error; } ->
-    let V { v; t; pp = pp_ok; eq = eq_ok; } = value_from value in
+    let V { v; t; pp = pp_ok; eq = eq_ok; } = of_value value in
     let Lambda.Type.V tok = Lambda.Type.typ (typ_from typ_ok) in
     let Lambda.Type.V terror = Lambda.Type.typ (typ_from typ_error) in
 
     let pp_error, eq_error = Lambda.Type.pp_val terror, Lambda.Type.eq_val terror in
 
     (match Lambda.Type.equal t tok with
-     | Some Lambda.Eq.Refl -> V { v = Pervasives.Ok v; t = Result (tok, terror); pp = Fmt.result ~ok:pp_ok ~error:pp_error; eq = result_eq ~eq_ok ~eq_error }
+     | Some Lambda.Eq.Refl ->
+       V { v = Pervasives.Ok v; t = Result (tok, terror);
+           pp = Fmt.result ~ok:pp_ok ~error:pp_error;
+           eq = result_eq ~eq_ok ~eq_error }
      | None -> Fmt.invalid_arg "Cannot unify %a and %a"
                  Lambda.Type.pp t
                  Lambda.Type.pp tok)
   | Types.Result { value = Types.Error { value; }; typ_ok; typ_error; } ->
-    let V { v; t; pp = pp_error; eq = eq_error; } = value_from value in
+    let V { v; t; pp = pp_error; eq = eq_error; } = of_value value in
     let Lambda.Type.V tok = Lambda.Type.typ (typ_from typ_ok) in
     let Lambda.Type.V terror = Lambda.Type.typ (typ_from typ_error) in
 
     let pp_ok, eq_ok = Lambda.Type.pp_val tok, Lambda.Type.eq_val tok in
 
     (match Lambda.Type.equal t terror with
-     | Some Lambda.Eq.Refl -> V { v = Pervasives.Error v; t = Result (tok, terror); pp = Fmt.result ~ok:pp_ok ~error:pp_error; eq = result_eq ~eq_ok ~eq_error }
+     | Some Lambda.Eq.Refl ->
+       V { v = Pervasives.Error v; t = Result (tok, terror);
+           pp = Fmt.result ~ok:pp_ok ~error:pp_error;
+           eq = result_eq ~eq_ok ~eq_error }
      | None -> Fmt.invalid_arg "Cannot unify %a and %a"
                  Lambda.Type.pp t
                  Lambda.Type.pp terror)
-  | Types.Return { value; _ } -> value_from value
+  | Types.Return { value; _ } ->
+    (* Client automatically unwrap toplevel lwt values. *)
+    of_value value
 
 module Option = struct let map f = function Some v -> Some (f v) | None -> None end
 
-let value_to : value -> Types.value = fun v ->
+let to_value : value -> Types.value = fun v ->
   let rec go : Lambda.Value.t -> Types.value = function
     | Lambda.Value.Unit -> Types.Unit
     | Lambda.Value.Int value -> Types.Int { value = Int32.of_int value; }
@@ -276,19 +289,32 @@ let value_to : value -> Types.value = fun v ->
     | Lambda.Value.Int64 value -> Types.Int64 { value; }
     | Lambda.Value.Bool value -> Types.Bool { value; }
     | Lambda.Value.String value -> Types.String { value; }
-    | Lambda.Value.List (typ, value) -> Types.List { typ = typ_to typ; value = List.map go value; }
-    | Lambda.Value.Array (typ, value) -> Types.Array { typ = typ_to typ; value = Array.map go value |> Array.to_list; }
-    | Lambda.Value.Option (typ, value) -> Types.Option { typ = typ_to typ; value = Option.map go value; }
+    | Lambda.Value.List (typ, value) ->
+      Types.List { typ = typ_to typ; value = List.map go value; }
+    | Lambda.Value.Array (typ, value) ->
+      Types.Array { typ = typ_to typ; value = Array.map go value |> Array.to_list; }
+    | Lambda.Value.Option (typ, value) ->
+      Types.Option { typ = typ_to typ; value = Option.map go value; }
     | Lambda.Value.Bytes value -> Types.Bytes { value = Bytes.to_string value; }
     | Lambda.Value.Pair (a, b) -> Types.Pair { a = go a; b = go b; }
-    | Lambda.Value.Either (L value, typl, typr) -> Types.Either { value = Types.Left { value = go value }; typ_l = typ_to typl; typ_r = typ_to typr }
-    | Lambda.Value.Either (R value, typl, typr) -> Types.Either { value = Types.Right { value = go value }; typ_l = typ_to typl; typ_r = typ_to typr }
-    | Lambda.Value.Result (Ok value, typ_ok, typ_error) -> Types.Result { value = Types.Ok { value = go value }; typ_ok = typ_to typ_ok; typ_error = typ_to typ_error }
-    | Lambda.Value.Result (Error value, typ_ok, typ_error) -> Types.Result { value = Types.Error { value = go value }; typ_ok = typ_to typ_ok; typ_error = typ_to typ_error }
-    | Lambda.Value.Return (value, typ) -> Types.Return { typ = typ_to typ; value = go value; } in
+    | Lambda.Value.Either (L value, typl, typr) ->
+      Types.Either { value = Types.Left { value = go value };
+                     typ_l = typ_to typl; typ_r = typ_to typr }
+    | Lambda.Value.Either (R value, typl, typr) ->
+      Types.Either { value = Types.Right { value = go value };
+                     typ_l = typ_to typl; typ_r = typ_to typr }
+    | Lambda.Value.Result (Ok value, typ_ok, typ_error) ->
+      Types.Result { value = Types.Ok { value = go value };
+                     typ_ok = typ_to typ_ok; typ_error = typ_to typ_error }
+    | Lambda.Value.Result (Error value, typ_ok, typ_error) ->
+      Types.Result { value = Types.Error { value = go value };
+                     typ_ok = typ_to typ_ok; typ_error = typ_to typ_error }
+    | Lambda.Value.Return (value, typ) ->
+      Types.Return { typ = typ_to typ; value = go value; }
+  in
   go (Lambda.Value.unsafe_value v)
 
-let expr_from
+let of_expr
   : ?gamma:Type.abstract Gamma.t ->
     ?primitives:primitive Primitives.t ->
     Types.expr -> expr
@@ -302,7 +328,7 @@ let expr_from
       | Types.Val { value = Types.Bool { value = false; }; } -> false_
       | Types.Val { value = Types.String { value; }; } -> string value
       | Types.Val { value = x; } ->
-        let V { v; t; pp; eq; } = value_from x in
+        let V { v; t; pp; eq; } = of_value x in
         value v t pp eq
       | Types.Prm { value = { name
                             ; arguments
@@ -369,54 +395,63 @@ let expr_from
         if_ (go s) (go a) (go b) in
     go
 
-let rec expr_to : expr -> Types.expr = function
-  | Val v -> Types.Val { value = value_to v; }
-  | Prm { name; args; ret; _ } -> Types.Prm { value = { name; arguments = List.map typ_to args; return = typ_to ret; }; }
-  | Lst (typ, lst) -> Types.Lst { typ = Option.map typ_to typ; expr = List.map expr_to lst; }
-  | Arr (typ, arr) -> Types.Arr { typ = Option.map typ_to typ; expr = Array.map expr_to arr |> Array.to_list; }
-  | Opt (Some typ, opt) -> Types.Opt { typ = typ_to typ; expr = Option.map expr_to opt; }
+let rec to_expr : expr -> Types.expr = function
+  | Val v -> Types.Val { value = to_value v; }
+  | Prm { name; args; ret; _ } ->
+    Types.Prm { value = { name; arguments = List.map typ_to args;
+                          return = typ_to ret; }; }
+  | Lst (typ, lst) ->
+    Types.Lst { typ = Option.map typ_to typ; expr = List.map to_expr lst; }
+  | Arr (typ, arr) ->
+    Types.Arr { typ = Option.map typ_to typ;
+                expr = Array.map to_expr arr |> Array.to_list; }
+  | Opt (Some typ, opt) ->
+    Types.Opt { typ = typ_to typ; expr = Option.map to_expr opt; }
   | Opt (None, _) -> invalid_arg "Optional construction needs to be typed"
-  | Ret expr -> Types.Ret { expr = expr_to expr; }
-  | Bnd (expr, func) -> Types.Bnd { expr = expr_to expr; func = expr_to func; }
+  | Ret expr -> Types.Ret { expr = to_expr expr; }
+  | Bnd (expr, func) -> Types.Bnd { expr = to_expr expr; func = to_expr func; }
   | Var { id; } -> Types.Var { var = Int32.of_int id; }
-  | Lam (typ, var, expr) -> Types.Lam { typ = typ_to typ; var; expr = expr_to expr; }
+  | Lam (typ, var, expr) ->
+    Types.Lam { typ = typ_to typ; var; expr = to_expr expr; }
   | Rec { r = ret; p = (name, argument); e = expr; } ->
     Types.Rec { ret = typ_to ret
               ; name
               ; argument = typ_to argument
-              ; expr = expr_to expr; }
-  | App (a, b) -> Types.App { a = expr_to a; b = expr_to b; }
-  | Bin (op, a, b) -> Types.Bin { op = binop_to op; a = expr_to a; b = expr_to b; }
-  | Uno (op, x) -> Types.Uno { op = unop_to op; x = expr_to x; }
+              ; expr = to_expr expr; }
+  | App (a, b) -> Types.App { a = to_expr a; b = to_expr b; }
+  | Bin (op, a, b) ->
+    Types.Bin { op = binop_to op; a = to_expr a; b = to_expr b; }
+  | Uno (op, x) -> Types.Uno { op = unop_to op; x = to_expr x; }
   | Let (typ, name, expr, body) ->
-    Types.Let { typ = typ_to typ; name; expr = expr_to expr; body = expr_to body; }
-  | Swt { a; b; s; } -> Types.Swt { a = expr_to a; b = expr_to b; s = expr_to s; }
-  | If (s, a, b) -> Types.If { a = expr_to a; b = expr_to b; s = expr_to s; }
+    Types.Let { typ = typ_to typ; name; expr = to_expr expr; body = to_expr body; }
+  | Swt { a; b; s; } -> Types.Swt { a = to_expr a; b = to_expr b; s = to_expr s; }
+  | If (s, a, b) -> Types.If { a = to_expr a; b = to_expr b; s = to_expr s; }
 
-let request_from
+let of_request
   : ?gamma:Type.abstract Gamma.t ->
     ?primitives:primitive Primitives.t ->
     Types.request -> expr * Type.t * int64
   = fun ?gamma ?primitives request ->
-    expr_from ?gamma ?primitives request.Types.expr, typ_from ?gamma request.Types.typ, request.Types.output
+    of_expr ?gamma ?primitives request.Types.expr,
+    typ_from ?gamma request.Types.typ, request.Types.output
 
-let request_to
+let to_request
   : expr * Type.t * int64 -> Types.request
   = fun (expr, typ, output) ->
-    { Types.expr = expr_to expr
+    { Types.expr = to_expr expr
     ; typ = typ_to typ
     ; output }
 
-let reply_from
+let of_reply
   : Types.reply -> (value, [ `Msg of string ]) result
   = function
-    | Types.Value value -> Ok (value_from value)
+    | Types.Value value -> Ok (of_value value)
     | Types.Error err -> Error (`Msg err)
 
-let reply_to
+let to_reply
   : (value, [ `Msg of string ]) result -> Types.reply
   = function
     | Error (`Msg err) -> Types.Error err
     | Ok (V { v; pp; _ } as value) ->
-      try Types.Value (value_to value)
+      try Types.Value (to_value value)
       with _ -> Types.Error (Fmt.strf "Invalid value (unserializable): %a" pp v)

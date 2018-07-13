@@ -388,6 +388,7 @@ module Expr = struct
     | R  : 'a Type.t -> ('b, ('a, 'b) Type.either) unop
     | Oky: 'b Type.t -> ('a, ('a, 'b) result) unop
     | Err: 'a Type.t -> ('b, ('a, 'b) result) unop
+    | Prj: (('a, 'b) result, ('a, 'b) Type.either) unop
 
   let pp_unop : type u v. (u, v) unop Fmt.t = fun ppf -> function
     | Fst    -> Fmt.string ppf "fst"
@@ -396,6 +397,7 @@ module Expr = struct
     | R ty   -> Fmt.pf ppf "R:%a" Type.pp ty
     | Oky ty -> Fmt.pf ppf "Ok:%a" Type.pp ty
     | Err ty -> Fmt.pf ppf "Error:%a" Type.pp ty
+    | Prj    -> Fmt.string ppf "prj"
 
   type ('u, 'v) nnop =
     | Arr: 'a Type.t -> ('a, 'a array) nnop
@@ -489,6 +491,10 @@ module Expr = struct
       ) in
     Type.App (Type.Lwt.inj f)
 
+  let prj = function
+    | Ok x    -> Type.L x
+    | Error e -> Type.R e
+
   let rec eval: type e a. (e, a) t -> e -> a = fun x e ->
     match x with
     | Val v        -> v.v
@@ -497,6 +503,7 @@ module Expr = struct
     | Uno (R _, x) -> R (eval x e)
     | Uno (Oky _, x) -> Ok (eval x e)
     | Uno (Err _, x) -> Error (eval x e)
+    | Uno (Prj, x) -> prj (eval x e)
     | Uno (Fst, x) -> fst (eval x e)
     | Uno (Snd, x) -> snd (eval x e)
     | Nar (Arr _, lst) -> List.map (fun x -> eval x e) lst |> Array.of_list
@@ -581,6 +588,7 @@ module Expr = struct
     | Val {t=Type.Array t;v=[||];_} -> P.array ~typ:(Type.untype t) [||]
     | Val {v;t;pp;eq}  -> P.value v t pp eq
     | Prm x            -> P.prim (Prim.untype x)
+    | Uno (Prj, x)     -> P.prj (untype x)
     | Uno (Fst, x)     -> P.fst (untype x)
     | Uno (Snd, x)     -> P.snd (untype x)
     | Uno (L r, x)     -> P.left (Type.untype r) (untype x)
@@ -638,6 +646,7 @@ module Expr = struct
     | ExpectedEither  of a_expr
     | ExpectedInt     of a_expr
     | ExpectedList    of a_expr
+    | ExpectedResult  of a_expr
     | UnboundVariable of int
 
   type error = Parsetree.expr * Parsetree.typ list * kind list
@@ -657,6 +666,7 @@ module Expr = struct
     | ExpectedEither _   -> Fmt.pf ppf "either was expected"
     | ExpectedInt _      -> Fmt.pf ppf "an int was expected"
     | ExpectedList _     -> Fmt.pf ppf "a list was expected"
+    | ExpectedResult _   -> Fmt.pf ppf "a result was expected"
     | UnboundVariable n  -> Fmt.pf ppf "unbound variable $%d" n
 
   let pp_error ppf (e, ts, ks) =
@@ -764,6 +774,11 @@ module Expr = struct
         (match Env.equal g' g'' with
          | Some Eq.Refl -> Expr (Uno (Err tl', x'), g', Result (tl', tx'))
          | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+      | Uno (Prj, x) ->
+        (match aux x g with
+         | Expr (x', g', Type.Result (ta, tb)) ->
+           Expr (Uno (Prj, x'), g', Type.Either (ta, tb))
+         | x -> error e g [ ExpectedResult x ])
       | Uno (Fst, x) ->
         (match aux x g with
          | Expr (x', g'', Type.Pair (ta', _)) ->

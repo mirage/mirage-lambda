@@ -99,6 +99,7 @@ let to_binop : binop -> Types.binop = function
   | `Get -> Types.Get
 
 let to_unop : unop -> Types.unop = function
+  | Prj -> Types.Prj
   | Fst -> Types.Fst
   | Snd -> Types.Snd
   | L t -> Types.L { value = of_typ t }
@@ -367,6 +368,8 @@ let of_expr
         get (go a) (go b)
       | Types.Uno { op = Types.Fst; x; } ->
         fst (go x)
+      | Types.Uno { op = Types.Prj; x; } ->
+        prj (go x)
       | Types.Uno { op = Types.Snd; x; } ->
         snd (go x)
       | Types.Uno { op = Types.L { value; }; x; } ->

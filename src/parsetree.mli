@@ -152,7 +152,7 @@ and binop =  [ arithmetic | `Pair | `Eq | `Get ]
 (** Binary operations. *)
 
 (** Unary operations. *)
-and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
+and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Prj
 
 (** {2 Pretty-printers.} *)
 
@@ -198,6 +198,7 @@ val get: expr -> expr -> expr
 
 val fst: expr -> expr
 val snd: expr -> expr
+val prj: expr -> expr
 
 val left: typ -> expr -> expr
 val right: typ -> expr -> expr

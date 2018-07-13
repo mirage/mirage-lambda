@@ -93,6 +93,7 @@ rule program t = parse
   | "unit"   { p t "unit"; UNIT }
   | "get"    { p t "get"; GET }
   | "fst"    { p t "FST"; FST }
+  | "prj"    { p t "PRJ"; PRJ }
   | "snd"    { p t "SND"; SND }
   | "let"    { p t "LET"; LET }
   | "in"     { p t "IN"; IN }

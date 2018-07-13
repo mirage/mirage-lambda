@@ -122,7 +122,7 @@ type arithmetic = [ `Add | `Sub | `Mul | `Div ]
 [@@deriving show, eq]
 
 type binop = [ arithmetic | `Pair | `Eq | `Get ]
-and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
+and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Prj
 and var = { id : int }
 and expr =
   | Val of value
@@ -204,19 +204,14 @@ let pp ppf t =
       let pp = aux (fst r.p :: ctx) in
       Fmt.pf ppf "@[<2>(rec %a: %a@ ->@ @[<2>%a@])@]"
         pp_params [r.p] Type.pp r.r pp r.e
-    | App (f, a) ->
-      Fmt.pf ppf "@[(@[%a@]@ @[%a@])@]" pp f pp a
+    | App (f, a)     -> Fmt.pf ppf "@[(@[%a@]@ @[%a@])@]" pp f pp a
     | Bin (op, a, b) -> pp_op pp op ppf (a, b)
-    | Uno (Fst, a) ->
-      Fmt.pf ppf "@[<2>(fst@ @[%a@])@]" pp a
-    | Uno (Snd, a) ->
-      Fmt.pf ppf "@[<2>(snd@ @[%a@])@]" pp a
-    | Uno (L t, a) ->
-      Fmt.pf ppf "@[<2>L@ @[(%a)@] @[(%a)@]@]" pp a Type.pp t
-    | Uno (R t, a) ->
-      Fmt.pf ppf "@[<2>R@ @[(%a)@] @[(%a)@]@]" Type.pp t pp a
-    | Uno (Ok t, a) ->
-      Fmt.pf ppf "@[<2>Ok@ @[(%a)@] @[(%a)@]@]" pp a Type.pp t
+    | Uno (Prj, a )  -> Fmt.pf ppf "@[<2>(prj@ @[%a@])@]" pp a
+    | Uno (Fst, a)   -> Fmt.pf ppf "@[<2>(fst@ @[%a@])@]" pp a
+    | Uno (Snd, a)   -> Fmt.pf ppf "@[<2>(snd@ @[%a@])@]" pp a
+    | Uno (L t, a)   -> Fmt.pf ppf "@[<2>L@ @[(%a)@] @[(%a)@]@]" pp a Type.pp t
+    | Uno (R t, a)   -> Fmt.pf ppf "@[<2>R@ @[(%a)@] @[(%a)@]@]" Type.pp t pp a
+    | Uno (Ok t, a)  -> Fmt.pf ppf "@[<2>Ok@ @[(%a)@] @[(%a)@]@]" pp a Type.pp t
     | Uno (Error t, a) ->
       Fmt.pf ppf "@[<2>Error@ @[(%a)@] @[(%a)@]@]" Type.pp t pp a
     | Let (t, n, v, f) ->
@@ -274,6 +269,7 @@ let left rtyp x = Uno (L rtyp, x)
 let right ltyp x = Uno (R ltyp, x)
 let fst x = Uno (Fst, x)
 let snd x = Uno (Snd, x)
+let prj x = Uno (Prj, x)
 
 let let_var t n x y = Let (t, n, x, y)
 

@@ -68,7 +68,7 @@
 %token L R
 %token APP
 %token DOLLAR
-%token FST SND GET
+%token FST SND GET PRJ
 
 %token S_INT S_INT32 S_INT64 S_BOOL S_STRING S_LIST S_ARRAY S_OPTION S_RESULT S_LWT
 %token ARROW BAR
@@ -85,7 +85,7 @@
 %left     BIND
 
 %left     S_OPTION S_LIST S_ARRAY S_LWT
-%nonassoc LSQU VAR INT INT32 INT64 STRING LPAR BOOL REC R L IF FUN FST SND
+%nonassoc LSQU VAR INT INT32 INT64 STRING LPAR BOOL REC R L IF FUN FST SND PRJ
           OK ERROR SOME RETURN NONE GET UNIT
           S_STRING S_INT S_INT32 S_INT64 S_BOOL
 %nonassoc APP
@@ -150,6 +150,7 @@ expr:
   | NONE t=base_typ              { fun _ g _ -> none (t g) }
   | FST e=base_expr              { fun p g c -> fst (e p g c) }
   | SND e=base_expr              { fun p g c -> snd (e p g c) }
+  | PRJ e=base_expr              { fun p g c -> prj (e p g c) }
   | LSQU BAR BAR RSQU t=base_typ { fun _ g _ -> array ~typ:(t g) [||] }
   | LSQU BAR l=list BAR RSQU
     { fun p g c ->

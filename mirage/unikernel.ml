@@ -157,10 +157,14 @@ module Main (B: BLOCK) (S: TCP) = struct
     let rec loop encoder = match Rpc.Encoder.eval src dst encoder with
       | `Await t ->
         let block_n, block_consumed = Rpc.Encoder.block t in
-        let len = min (Cstruct.len src) (Cstruct.len (List.nth blocks (Int64.to_int block_n)) - block_consumed) in
+        let len =
+          min
+            (Cstruct.len src)
+            (Cstruct.len (List.nth blocks (Int64.to_int block_n)) - block_consumed)
+        in
         Cstruct.blit (List.nth blocks (Int64.to_int block_n)) block_consumed src 0 len;
-
         loop (Rpc.Encoder.refill 0 len t)
+
       | `Flush t ->
         S.TCPV4.write flow (Cstruct.sub dst 0 (Rpc.Encoder.used_out t)) >>? fun () ->
         loop (Rpc.Encoder.flush 0 (Cstruct.len dst) t)

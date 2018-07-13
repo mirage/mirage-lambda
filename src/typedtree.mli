@@ -27,6 +27,8 @@ module Type: sig
     | L of 'a
     | R of 'b
 
+  type 'a abstract = 'a T.abstract = { eq: 'a Eq.witness; pp: 'a Fmt.t option }
+
   type 'a t = 'a T.t =
     | Unit    : unit t
     | Int     : int t
@@ -39,7 +41,7 @@ module Type: sig
     | List    : 'a t -> 'a list t
     | Array   : 'a t -> 'a array t
     | Option  : 'a t -> 'a option t
-    | Abstract: 'a Eq.witness -> 'a t
+    | Abstract: 'a abstract -> 'a t
     | Apply   : 'a t * 'b t -> ('a, 'b) app t
     | Arrow   : 'a t * 'b t -> ('a -> 'b) t
     | Pair    : 'a t * 'b t -> ('a * 'b) t
@@ -68,7 +70,7 @@ module Type: sig
   val list: 'a t -> 'a list t
   val option: 'a t -> 'a option t
   val array: 'a t -> 'a array t
-  val abstract: string -> 'a t
+  val abstract: ?pp:'a Fmt.t -> string -> 'a t
 
   val lwt: 'a t -> ('a, lwt) app t
   val apply: 'a t -> 'b t -> ('a, 'b) app t

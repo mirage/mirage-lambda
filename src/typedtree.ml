@@ -41,7 +41,7 @@ module Type = struct
     | List a        -> Fmt.pf ppf "%a list" pp a
     | Option a      -> Fmt.pf ppf "%a option" pp a
     | Array a       -> Fmt.pf ppf "%a array" pp a
-    | Abstract b    -> Fmt.pf ppf "@[%s@]" b.name
+    | Abstract b    -> Fmt.pf ppf "@[%s@]" b.eq.name
     | Apply (a, b)  -> Fmt.pf ppf "@[%a %a@]" pp a pp b
     | Arrow (a, b)  -> Fmt.pf ppf "%a" (pp_infix ~infix:"->" pp pp) (a, b)
     | Pair (a, b)   -> Fmt.pf ppf "%a" (pp_infix ~infix:"*" pp pp) (a, b)
@@ -65,12 +65,12 @@ module Type = struct
   let lwt x = apply x Lwt
   let result a b = Result (a, b)
 
-  let abstract name =
+  let abstract ?pp name =
     let wit = Eq.Witness.v () in
-    Abstract {name; wit}
+    Abstract {eq={name; wit}; pp }
 
   let abstract_injection = function
-    | Abstract { name; wit; } -> Parsetree.Type.A { Eq.name; wit; }
+    | Abstract { eq; pp } -> Parsetree.Type.A (eq, pp)
     | _ -> Fmt.invalid_arg "Type.abstract_projection: expected abstract type"
 
   let ( @->) = arrow
@@ -91,7 +91,7 @@ module Type = struct
     | List a        -> P.list (untype a)
     | Option a      -> P.option (untype a)
     | Array a       -> P.array (untype a)
-    | Abstract a    -> P.abstract a
+    | Abstract a    -> P.abstract a.eq
     | Apply (a, b)  -> P.apply (untype a) (untype b)
     | Pair (a, b)   -> P.(untype a ** untype b)
     | Either (a, b) -> P.(untype a || untype b)
@@ -120,7 +120,7 @@ module Type = struct
     | Array a ->
       let V a = typ a in
       V (Array a)
-    | Abstract (P.A a) -> V (Abstract a)
+    | Abstract (P.A (eq, pp)) -> V (Abstract {eq; pp})
     | Apply (a, b) ->
       let V b = typ b in
       let V a = typ a in
@@ -224,7 +224,7 @@ module Type = struct
     | Either (ta, tb), Either (tx, ty) ->
       eq ta tx && eq tb ty
     | Abstract ta, Abstract tb ->
-      (match Eq.Witness.eq ta.Eq.wit tb.Eq.wit with
+      (match Eq.Witness.eq ta.eq.Eq.wit tb.eq.Eq.wit with
        | Some Eq.Refl -> true
        | None -> false)
     | _, _ -> false

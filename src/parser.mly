@@ -109,10 +109,8 @@ main:
 request:
   | e=expr_seq COLON t=typ EOF
                          { fun prims gams ->
-                           let pp ppf (Type.A w) = Fmt.string ppf w.Eq.name in
-                           Fmt.(pf stdout) "gamma: %a.\n%!"
-                             Fmt.(list (pair string pp)) gams;
-                           try Ok (e prims gams [], t gams) with Internal s -> Error s }
+                           try Ok (e prims gams [], t gams)
+                           with Internal s -> Error s }
 
 expr_seq:
   | e=expr %prec below_SEMI { e }
@@ -222,13 +220,13 @@ base_typ:
   | S_STRING         { fun _ -> Type.string }
   | S_LWT            { fun _ -> Type.lwt }
   | v=VAR            { fun gams ->
-                       try let Type.A { name; _} = (List.assoc v gams) in
+                       try let Type.A ({ name; _}, _ ) = List.assoc v gams in
                            if String.equal name v
                            then Type.unsafe_abstract (List.assoc v gams)
                            else err "Mismatch abstract type: %s <> %s (expected)" v name
                        with _ ->
-                         let pp ppf (Type.A w) = Fmt.string ppf w.Eq.name in
-                         err "Invalid abstract type: %s (%a)" v Fmt.(list (pair string pp)) gams }
+                         err "Invalid abstract type: %s (%a)"
+                             v Fmt.(list (pair string Type.pp_abstract)) gams }
 
 typ:
   | ty=base_typ       { ty }

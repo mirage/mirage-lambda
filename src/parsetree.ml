@@ -20,11 +20,11 @@ let pp_infix ~infix pp_a pp_b ppf (a, b) =
 
 module Type = struct
 
-  type abstract = A: 'a Eq.witness -> abstract
+  type abstract = A: 'a Eq.witness * 'a Fmt.t option -> abstract
 
-  let pp_abstract ppf (A a) = Fmt.string ppf a.name
+  let pp_abstract ppf (A (a, _)) = Fmt.string ppf a.name
 
-  let equal_abstract (A a) (A b) =
+  let equal_abstract (A (a, _)) (A (b, _)) =
     a.name = b.name && match Eq.Witness.eq a.wit b.wit with
     | Some Eq.Refl -> true
     | _ -> false
@@ -86,7 +86,7 @@ module Type = struct
 
   let arrow a b = Arrow (a, b)
   let either a b = Either (a, b)
-  let abstract a = Abstract (A a)
+  let abstract ?pp a = Abstract (A (a, pp))
   let unsafe_abstract a = Abstract a
   let apply a b = Apply (a, b)
   let result a b = Result (a, b)

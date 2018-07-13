@@ -2,6 +2,8 @@ module Types = Lambda_types
 module Pb = Lambda_pb
 module Rpc = Lambda_rpc
 
+type error = [`Msg of string]
+
 type ('a, 'b) either = ('a, 'b) Lambda.Value.either =
   | L of 'a
   | R of 'b
@@ -83,17 +85,8 @@ let typ_to =
     | Type.Pair (a, b) -> Types.Pair { a = go a; b = go b; }
     | Type.Either (a, b) -> Types.Either { a = go a; b = go b; }
     | Type.Result (a, b) -> Types.Result { a = go a; b = go b; }
-    | Type.Abstract (Type.A witness) -> Types.Abstract { witness = witness.Lambda.Eq.name }
+    | Type.Abstract (Type.A (eq, _)) -> Types.Abstract { witness = eq.Lambda.Eq.name }
   in go
-
-let binop_from : Types.binop -> binop = function
-  | Types.Add -> `Add
-  | Types.Sub -> `Sub
-  | Types.Mul -> `Mul
-  | Types.Div -> `Div
-  | Types.Pair -> `Pair
-  | Types.Eq -> `Eq
-  | Types.Get -> `Get
 
 let binop_to : binop -> Types.binop = function
   | `Add -> Types.Add
@@ -103,14 +96,6 @@ let binop_to : binop -> Types.binop = function
   | `Pair -> Types.Pair
   | `Eq -> Types.Eq
   | `Get -> Types.Get
-
-let unop_from : ?gamma:Type.abstract Gamma.t -> Types.unop -> unop = fun ?gamma -> function
-  | Types.Fst -> Fst
-  | Types.Snd -> Snd
-  | Types.L { value; } -> L (typ_from ?gamma value)
-  | Types.R { value; } -> R (typ_from ?gamma value)
-  | Types.Ok { value; } -> Ok (typ_from ?gamma value)
-  | Types.Error { value; } -> Error (typ_from ?gamma value)
 
 let unop_to : unop -> Types.unop = function
   | Fst -> Types.Fst
@@ -281,7 +266,7 @@ let rec of_value : Types.value -> value = function
 
 module Option = struct let map f = function Some v -> Some (f v) | None -> None end
 
-let to_value : value -> Types.value = fun v ->
+let to_value : value -> (Types.value, [`Msg of string]) result = fun v ->
   let rec go : Lambda.Value.t -> Types.value = function
     | Lambda.Value.Unit -> Types.Unit
     | Lambda.Value.Int value -> Types.Int { value = Int32.of_int value; }
@@ -312,7 +297,9 @@ let to_value : value -> Types.value = fun v ->
     | Lambda.Value.Return (value, typ) ->
       Types.Return { typ = typ_to typ; value = go value; }
   in
-  go (Lambda.Value.unsafe_value v)
+  match Lambda.Value.unsafe_value v with
+  | Ok v         -> Ok (go v)
+  | Error _ as e -> e
 
 let of_expr
   : ?gamma:Type.abstract Gamma.t ->
@@ -395,37 +382,49 @@ let of_expr
         if_ (go s) (go a) (go b) in
     go
 
-let rec to_expr : expr -> Types.expr = function
-  | Val v -> Types.Val { value = to_value v; }
-  | Prm { name; args; ret; _ } ->
-    Types.Prm { value = { name; arguments = List.map typ_to args;
-                          return = typ_to ret; }; }
-  | Lst (typ, lst) ->
-    Types.Lst { typ = Option.map typ_to typ; expr = List.map to_expr lst; }
-  | Arr (typ, arr) ->
-    Types.Arr { typ = Option.map typ_to typ;
-                expr = Array.map to_expr arr |> Array.to_list; }
-  | Opt (Some typ, opt) ->
-    Types.Opt { typ = typ_to typ; expr = Option.map to_expr opt; }
-  | Opt (None, _) -> invalid_arg "Optional construction needs to be typed"
-  | Ret expr -> Types.Ret { expr = to_expr expr; }
-  | Bnd (expr, func) -> Types.Bnd { expr = to_expr expr; func = to_expr func; }
-  | Var { id; } -> Types.Var { var = Int32.of_int id; }
-  | Lam (typ, var, expr) ->
-    Types.Lam { typ = typ_to typ; var; expr = to_expr expr; }
-  | Rec { r = ret; p = (name, argument); e = expr; } ->
-    Types.Rec { ret = typ_to ret
-              ; name
-              ; argument = typ_to argument
-              ; expr = to_expr expr; }
-  | App (a, b) -> Types.App { a = to_expr a; b = to_expr b; }
-  | Bin (op, a, b) ->
-    Types.Bin { op = binop_to op; a = to_expr a; b = to_expr b; }
-  | Uno (op, x) -> Types.Uno { op = unop_to op; x = to_expr x; }
-  | Let (typ, name, expr, body) ->
-    Types.Let { typ = typ_to typ; name; expr = to_expr expr; body = to_expr body; }
-  | Swt { a; b; s; } -> Types.Swt { a = to_expr a; b = to_expr b; s = to_expr s; }
-  | If (s, a, b) -> Types.If { a = to_expr a; b = to_expr b; s = to_expr s; }
+exception Error of [`Msg of string]
+
+let err e = raise (Error e)
+
+let (>>?) x f = match x with
+  | Result.Error e -> err e
+  | Result.Ok x    -> f x
+
+let to_expr : expr -> (Types.expr, [`Msg of string]) result = fun e ->
+  let rec go = function
+    | Val v -> to_value v >>? fun value -> Types.Val { value }
+    | Prm { name; args; ret; _ } ->
+      Types.Prm { value = { name; arguments = List.map typ_to args;
+                            return = typ_to ret; }; }
+    | Lst (typ, lst) ->
+      Types.Lst { typ = Option.map typ_to typ; expr = List.map go lst; }
+    | Arr (typ, arr) ->
+      Types.Arr { typ = Option.map typ_to typ;
+                  expr = Array.map go arr |> Array.to_list; }
+    | Opt (Some typ, opt) ->
+      Types.Opt { typ = typ_to typ; expr = Option.map go opt; }
+    | Opt (None, _) -> invalid_arg "Optional construction needs to be typed"
+    | Ret expr -> Types.Ret { expr = go expr; }
+    | Bnd (expr, func) -> Types.Bnd { expr = go expr; func = go func; }
+    | Var { id; } -> Types.Var { var = Int32.of_int id; }
+    | Lam (typ, var, expr) ->
+      Types.Lam { typ = typ_to typ; var; expr = go expr; }
+    | Rec { r = ret; p = (name, argument); e = expr; } ->
+      Types.Rec { ret = typ_to ret
+                ; name
+                ; argument = typ_to argument
+                ; expr = go expr; }
+    | App (a, b) -> Types.App { a = go a; b = go b; }
+    | Bin (op, a, b) ->
+      Types.Bin { op = binop_to op; a = go a; b = go b; }
+    | Uno (op, x) -> Types.Uno { op = unop_to op; x = go x; }
+    | Let (typ, name, expr, body) ->
+      Types.Let { typ = typ_to typ; name; expr = go expr; body = go body; }
+    | Swt { a; b; s; } -> Types.Swt { a = go a; b = go b; s = go s; }
+    | If (s, a, b) -> Types.If { a = go a; b = go b; s = go s; }
+  in
+  try Ok (go e)
+  with Error e -> Error e
 
 let of_request
   : ?gamma:Type.abstract Gamma.t ->
@@ -436,22 +435,23 @@ let of_request
     typ_from ?gamma request.Types.typ, request.Types.output
 
 let to_request
-  : expr * Type.t * int64 -> Types.request
+  : expr * Type.t * int64 -> (Types.request, [`Msg of string]) result
   = fun (expr, typ, output) ->
-    { Types.expr = to_expr expr
-    ; typ = typ_to typ
-    ; output }
+    match to_expr expr with
+    | Error _ as e -> e
+    | Ok expr -> Ok { Types.expr; typ = typ_to typ ; output }
 
 let of_reply
   : Types.reply -> (value, [ `Msg of string ]) result
   = function
     | Types.Value value -> Ok (of_value value)
-    | Types.Error err -> Error (`Msg err)
+    | Types.Error err   -> Error (`Msg err)
 
 let to_reply
   : (value, [ `Msg of string ]) result -> Types.reply
   = function
     | Error (`Msg err) -> Types.Error err
-    | Ok (V { v; pp; _ } as value) ->
-      try Types.Value (to_value value)
-      with _ -> Types.Error (Fmt.strf "Invalid value (unserializable): %a" pp v)
+    | Ok value         ->
+      match to_value value with
+      | Error (`Msg e) -> Types.Error e
+      | Ok v           -> Types.Value v

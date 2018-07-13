@@ -18,4 +18,4 @@ type t =
   | Result of (t, t) result * Parsetree.Type.t * Parsetree.Type.t
   | Return of (t * Parsetree.Type.t)
 
-val unsafe_value: Parsetree.value -> t
+val unsafe_value: Parsetree.value -> (t, [`Msg of string]) result

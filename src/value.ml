@@ -32,7 +32,12 @@ let result_map fa fb = function
   | Ok a -> Ok (fa a)
   | Error b -> Error (fb b)
 
-let unsafe_value : Parsetree.value -> t = fun (Parsetree.V x) ->
+exception Error of string
+
+let err fmt = Fmt.kstrf (fun s -> raise (Error s)) fmt
+
+let unsafe_value : Parsetree.value -> (t, [`Msg of string]) result =
+  fun (Parsetree.V x) ->
   let rec go : type a. a T.t -> a -> t = fun proof value -> match proof with
     | T.Unit -> Unit
     | T.Int -> Int value
@@ -56,5 +61,13 @@ let unsafe_value : Parsetree.value -> t = fun (Parsetree.V x) ->
         | Sleep    -> Fmt.invalid_arg "the lwt thread is sleeping"
         | Return v -> Return (go tx v, Typedtree.Type.untype tx)
       end
-    | t -> Fmt.invalid_arg "Unsafe_value.unsafe_value: invalid type %a" Typedtree.Type.pp t in
-  go x.t x.v
+    | T.Abstract a ->
+      (match a.pp with
+       | Some pp -> err "%a" pp value
+       | None    -> err "<abstract value>")
+    | T.Lwt      -> err "lwt"
+    | T.Arrow _  -> err "<arrow>"
+    | T.Apply _  -> err "<apply>"
+  in
+  try Ok (go x.t x.v)
+  with Error e -> Error (`Msg e)

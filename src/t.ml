@@ -26,6 +26,8 @@ type ('a, 'b) app = App of ('a, 'b) Higher.app
 
 type lwt = Lwt.t
 
+type 'a abstract = { eq: 'a Eq.witness; pp: 'a Fmt.t option }
+
 type _ t =
   | Unit    : unit t
   | Int     : int t
@@ -38,7 +40,7 @@ type _ t =
   | List    : 'a t -> 'a list t
   | Array   : 'a t -> 'a array t
   | Option  : 'a t -> 'a option t
-  | Abstract: 'a Eq.witness -> 'a t
+  | Abstract: 'a abstract -> 'a t
   | Apply   : 'a t * 'b t -> ('a, 'b) app t
   | Arrow   : 'a t * 'b t -> ('a -> 'b) t
   | Pair    : 'a t * 'b t -> ('a * 'b) t
@@ -61,7 +63,7 @@ let rec equal: type a b. a t -> b t -> (a, b) Eq.refl option = fun a b ->
     (match equal a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
   | Option a, Option b ->
     (match equal a b with Some Eq.Refl -> Some Eq.Refl | _ -> None)
-  | Abstract a, Abstract b -> Eq.Witness.eq a.wit b.wit
+  | Abstract a, Abstract b -> Eq.Witness.eq a.eq.wit b.eq.wit
   | Apply (a, a') , Apply (b, b')  ->
     (match equal a b, equal a' b' with
      | Some Eq.Refl, Some Eq.Refl -> Some Eq.Refl

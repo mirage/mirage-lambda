@@ -19,7 +19,7 @@
 
 module Type: sig
 
-  type abstract = A: 'a Eq.witness -> abstract
+  type abstract = A: 'a Eq.witness * 'a Fmt.t option -> abstract
 
   type t = private
     | Unit
@@ -74,7 +74,7 @@ module Type: sig
   val either: t -> t -> t
   val result: t -> t -> t
 
-  val abstract: 'a Eq.witness -> t
+  val abstract: ?pp:'a Fmt.t -> 'a Eq.witness -> t
   val unsafe_abstract: abstract -> t
   val apply: t -> t -> t
 
@@ -87,6 +87,7 @@ module Type: sig
   (** {2 Pretty-printer.} *)
 
   val pp: t Fmt.t
+  val pp_abstract: abstract Fmt.t
   val dump: t Fmt.t
 end
 

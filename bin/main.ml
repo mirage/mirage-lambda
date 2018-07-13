@@ -60,12 +60,16 @@ let request ~block_n ~block_size ~block_output ?(gamma = []) ?(primitives = []) 
   | Ok v ->
     let (ast, typ) = v in
     Fmt.(pf stdout) "Ready to send: %a:%a.\n%!" Lambda.Parsetree.pp ast Lambda.Parsetree.Type.pp typ;
-    let encoder = Lambda_protobuf.Rpc.Encoder.default
-        Lambda_protobuf.Rpc.Encoder.Request
-        (Lambda_protobuf.to_request (ast, typ, Int64.of_int block_output))
-        (Int64.of_int block_size)
-        (Int64.of_int block_n) in
-    Ok encoder
+    match Lambda_protobuf.to_request (ast, typ, Int64.of_int block_output) with
+    | Error _ as e -> e
+    | Ok request   ->
+      let encoder = Lambda_protobuf.Rpc.Encoder.default
+          Lambda_protobuf.Rpc.Encoder.Request
+          request
+          (Int64.of_int block_size)
+          (Int64.of_int block_n)
+      in
+      Ok encoder
 
 let make_socket addr port =
   Printf.printf "Connecting to %s:%d\n%!" addr port;

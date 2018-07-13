@@ -48,9 +48,6 @@ let parse_exn ?file ?primitives ?gamma str =
 
 module Request = struct
   let parse ?(file="<none>") ?(primitives=[]) ?(gamma=[]) str =
-    let pp ppf (Parsetree.Type.A w) = Fmt.string ppf w.Eq.name in
-    Fmt.(pf stdout) "gamma: %a.\n%!"
-      Fmt.(list (pair string pp)) gamma;
     let lexbuf = Lexing.from_string str in
     let err msg =
       let msg = Fmt.strf "%a: %s\n.%!" (pp_position file) lexbuf msg in

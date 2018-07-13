@@ -218,8 +218,7 @@ module Main (B: BLOCK) (S: TCP) = struct
     let (>>?) v f = v >>= function
       | Ok v -> f v
       | Error (`Msg err) ->
-        Log.err (fun f ->
-            f "Got an evaluation error: %s." err);
+        Log.err (fun f -> f "Got an evaluation error: %s." err);
         Lwt.return_unit in
 
     let rec loop blocks decoder =

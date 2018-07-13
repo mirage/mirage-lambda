@@ -72,7 +72,7 @@ module Main (B: BLOCK) (S: TCP) = struct
       Primitives.empty
       Lambda.[ primitive   "Block.pp_error"           [ formatter; error; ]                     Type.unit                            B.pp_error
              ; primitive   "Block.pp_write_error"     [ formatter; write_error; ]               Type.unit                            B.pp_write_error
-             ; L.primitive "Block.disconnect"         []                                        Type.(lwt unit)                      B.(disconnect b)
+             ; L.primitive "Block.disconnect"         [ Type.unit ]                             Type.(lwt unit)                      (fun () -> B.disconnect b)
              ; L.primitive "Block.get_info"           []                                        Type.(lwt info)                      B.(get_info b)
              ; primitive   "read_write"               [ info ]                                  Type.bool                            (fun b -> b.Mirage_block.read_write)
              ; primitive   "sector_size"              [ info ]                                  Type.int                             (fun b -> b.Mirage_block.sector_size)

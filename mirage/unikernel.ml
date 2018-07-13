@@ -86,11 +86,7 @@ module Main (B: BLOCK) (S: TCP) = struct
       ; primitive   "size_sectors"             [ info ]
           Type.int64                           (fun b -> b.Mirage_block.size_sectors)
       ; L.primitive "Block.read"               Type.[ int64; list cstruct; ]
-          Type.(lwt (result unit error))       B.(fun off cs ->
-              read b off cs >|= fun res -> match res with
-              | Ok ()     -> res
-              | Error err ->
-                Fmt.epr "Got an error: %a.\n%!" B.pp_error err; res)
+          Type.(lwt (result unit error))       B.(read b)
       ; L.primitive "Block.write"              Type.[ int64; list cstruct; ]
           Type.(lwt (result unit write_error)) B.(write b)
       ; primitive   "Cstruct.to_string"        [ cstruct ]

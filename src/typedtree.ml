@@ -144,6 +144,10 @@ module Type = struct
 
   let pp_bytes ppf x = Fmt.string ppf (Bytes.unsafe_to_string x)
 
+  let pp_abstract a ppf x = match a.pp with
+    | None   -> Fmt.string ppf "<abstract>"
+    | Some f -> f ppf x
+
   let rec pp_val: type a. a t -> a Fmt.t = fun t ppf x ->
     match t with
     | Unit           -> Fmt.string ppf "()"
@@ -157,12 +161,12 @@ module Type = struct
     | List a         -> Fmt.Dump.list (pp_val a) ppf x
     | Option a       -> Fmt.Dump.option (pp_val a) ppf x
     | Array a        -> Fmt.Dump.array (pp_val a) ppf x
-    | Abstract _     -> Fmt.pf ppf "<abstract>"
-    | Apply (t, Lwt) -> Fmt.pf ppf "#promise(%a)" pp t
-    | Apply (v, t)   -> Fmt.pf ppf "#%a(%a)" pp t pp v
+    | Abstract a     -> pp_abstract a ppf x
+    | Apply (_, Lwt) -> Fmt.pf ppf "<promise>"
+    | Apply (_, _)   -> Fmt.pf ppf "<apply>"
     | Arrow _        -> Fmt.pf ppf "<function>"
     | Pair (a, b)    -> Fmt.Dump.pair (pp_val a) (pp_val b) ppf x
-    | Result (a, b)  -> Fmt.Dump.result ppf ~ok:(pp_val a) ~error:(pp_val b) x
+    | Result (a, b)  -> Fmt.Dump.(result ~ok:(pp_val a) ~error:(pp_val b)) ppf x
     | Either (a, b)  -> match x with
       | L x -> Fmt.pf ppf "L %a" (pp_val a) x
       | R x -> Fmt.pf ppf "R %a" (pp_val b) x

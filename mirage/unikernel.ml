@@ -120,17 +120,19 @@ module Main (B: BLOCK) (S: TCP) = struct
       Log.err (fun l -> l "Got %a, closing" S.TCPV4.pp_write_error e);
       S.TCPV4.close flow
 
-  let result: type a. a Lambda.Type.t -> a -> (a, _) result =
+  let result: type a. a Lambda.Type.t -> a -> (a, _) result Lwt.t =
     fun ret x ->
       match ret with
       | Lambda.Type.Apply (ty, Lambda.Type.Lwt) ->
         let Lambda.Type.App x = x in
         let x = Lambda.Type.Lwt.prj x in
-        let x = Lwt_main.run x in
+        x >|= fun x ->
         let x = Lambda.Expr.return x in
         Ok x
       | _ ->
-        Ok x
+        Lwt.return (Ok x)
+
+  let err fmt = Fmt.kstrf (fun e -> Lwt.return (Error (`Msg e))) fmt
 
   let eval ~block_size ~blocks ~gamma ~primitives request =
     try
@@ -140,20 +142,26 @@ module Main (B: BLOCK) (S: TCP) = struct
       let request = Lambda_protobuf.Pb.decode_request request in
       let ast, ret, output = Lambda_protobuf.of_request ~gamma ~primitives request in
       let Lambda.Type.V ret = Lambda.Type.typ ret in
-
-      let expected = Lambda.Type.(list AbstractTypes.cstruct @-> list AbstractTypes.cstruct @-> ret) in
-      let outputs = List.init (Int64.to_int output) (fun _ -> Cstruct.create (Int64.to_int block_size)) in
-
-      let res = match Lambda.type_and_eval ast expected with
-        | Error e -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e
-        | Ok f    -> result ret (f blocks outputs)
+      let expected =
+        Lambda.Type.(list AbstractTypes.cstruct
+                     @-> list AbstractTypes.cstruct
+                     @-> ret)
       in
+      let outputs =
+        List.init
+          (Int64.to_int output)
+          (fun _ -> Cstruct.create (Int64.to_int block_size))
+      in
+      (match Lambda.type_and_eval ast expected with
+       | Error e -> err "%a" Lambda.pp_error e
+       | Ok f    -> result ret (f blocks outputs))
+      >|= fun res ->
 
       let pp_value = Lambda.Type.pp_val ret in
 
       Logs.info (fun l -> l "Process and eval: %a => %a.\n%!"
                     Lambda.Parsetree.pp ast
-                    (Fmt.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
+                    (Fmt.Dump.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
 
       let res = Rresult.R.map (Lambda.uncast ret) res in
       let res = Lambda_protobuf.to_reply res in
@@ -161,8 +169,8 @@ module Main (B: BLOCK) (S: TCP) = struct
 
       Ok (outputs, encoder)
     with exn ->
-      Logs.err (fun l -> l "Retrieve an error: %s" (Printexc.to_string exn));
-      Error (`Msg (Printexc.to_string exn))
+      Logs.err (fun l -> l "Got an error: %a" Fmt.exn exn);
+      err "%a" Fmt.exn exn
 
   let send flow (blocks, encoder) =
     let (>>?) = bind_err flow in
@@ -207,7 +215,7 @@ module Main (B: BLOCK) (S: TCP) = struct
     let block_buffer = Cstruct_buffer.create 512 in
     let decoder = Lambda_protobuf.Rpc.(Decoder.default Request) in
 
-    let (>>?) v f = match v with
+    let (>>?) v f = v >>= function
       | Ok v -> f v
       | Error (`Msg err) ->
         Log.err (fun f ->

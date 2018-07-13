@@ -41,7 +41,7 @@ module Type = struct
     | List a        -> Fmt.pf ppf "%a list" pp a
     | Option a      -> Fmt.pf ppf "%a option" pp a
     | Array a       -> Fmt.pf ppf "%a array" pp a
-    | Abstract b    -> Fmt.pf ppf "@[%s@]" b.name
+    | Abstract b    -> Fmt.pf ppf "@[%s@]" b.eq.name
     | Apply (a, b)  -> Fmt.pf ppf "@[%a %a@]" pp a pp b
     | Arrow (a, b)  -> Fmt.pf ppf "%a" (pp_infix ~infix:"->" pp pp) (a, b)
     | Pair (a, b)   -> Fmt.pf ppf "%a" (pp_infix ~infix:"*" pp pp) (a, b)
@@ -65,12 +65,12 @@ module Type = struct
   let lwt x = apply x Lwt
   let result a b = Result (a, b)
 
-  let abstract name =
+  let abstract ?pp name =
     let wit = Eq.Witness.v () in
-    Abstract {name; wit}
+    Abstract {eq={name; wit}; pp }
 
   let abstract_injection = function
-    | Abstract { name; wit; } -> Parsetree.Type.A { Eq.name; wit; }
+    | Abstract { eq; pp } -> Parsetree.Type.A (eq, pp)
     | _ -> Fmt.invalid_arg "Type.abstract_projection: expected abstract type"
 
   let ( @->) = arrow
@@ -91,7 +91,7 @@ module Type = struct
     | List a        -> P.list (untype a)
     | Option a      -> P.option (untype a)
     | Array a       -> P.array (untype a)
-    | Abstract a    -> P.abstract a
+    | Abstract a    -> P.abstract a.eq
     | Apply (a, b)  -> P.apply (untype a) (untype b)
     | Pair (a, b)   -> P.(untype a ** untype b)
     | Either (a, b) -> P.(untype a || untype b)
@@ -120,7 +120,7 @@ module Type = struct
     | Array a ->
       let V a = typ a in
       V (Array a)
-    | Abstract (P.A a) -> V (Abstract a)
+    | Abstract (P.A (eq, pp)) -> V (Abstract {eq; pp})
     | Apply (a, b) ->
       let V b = typ b in
       let V a = typ a in
@@ -144,25 +144,30 @@ module Type = struct
 
   let pp_bytes ppf x = Fmt.string ppf (Bytes.unsafe_to_string x)
 
+  let pp_abstract a ppf x = match a.pp with
+    | None   -> Fmt.string ppf "<abstract>"
+    | Some f -> f ppf x
+
   let rec pp_val: type a. a t -> a Fmt.t = fun t ppf x ->
     match t with
-    | Unit          -> Fmt.string ppf "()"
-    | Int           -> Fmt.int ppf x
-    | Int32         -> Fmt.int32 ppf x
-    | Int64         -> Fmt.int64 ppf x
-    | Bool          -> Fmt.bool ppf x
-    | String        -> Fmt.string ppf x
-    | Bytes         -> pp_bytes ppf x
-    | Lwt           -> Fmt.string ppf "<promise>"
-    | List a        -> Fmt.Dump.list (pp_val a) ppf x
-    | Option a      -> Fmt.Dump.option (pp_val a) ppf x
-    | Array a       -> Fmt.Dump.array (pp_val a) ppf x
-    | Abstract _    -> Fmt.pf ppf "<abstract>"
-    | Apply _       -> Fmt.string ppf "TODO: pp apply"
-    | Arrow _       -> Fmt.pf ppf "<function>"
-    | Pair (a, b)   -> Fmt.Dump.pair (pp_val a) (pp_val b) ppf x
-    | Result (a, b) -> Fmt.Dump.result ppf ~ok:(pp_val a) ~error:(pp_val b) x
-    | Either (a, b) -> match x with
+    | Unit           -> Fmt.string ppf "()"
+    | Int            -> Fmt.int ppf x
+    | Int32          -> Fmt.int32 ppf x
+    | Int64          -> Fmt.int64 ppf x
+    | Bool           -> Fmt.bool ppf x
+    | String         -> Fmt.string ppf x
+    | Bytes          -> pp_bytes ppf x
+    | Lwt            -> Fmt.string ppf "<promise>"
+    | List a         -> Fmt.Dump.list (pp_val a) ppf x
+    | Option a       -> Fmt.Dump.option (pp_val a) ppf x
+    | Array a        -> Fmt.Dump.array (pp_val a) ppf x
+    | Abstract a     -> pp_abstract a ppf x
+    | Apply (_, Lwt) -> Fmt.pf ppf "<promise>"
+    | Apply (_, _)   -> Fmt.pf ppf "<apply>"
+    | Arrow _        -> Fmt.pf ppf "<function>"
+    | Pair (a, b)    -> Fmt.Dump.pair (pp_val a) (pp_val b) ppf x
+    | Result (a, b)  -> Fmt.Dump.(result ~ok:(pp_val a) ~error:(pp_val b)) ppf x
+    | Either (a, b)  -> match x with
       | L x -> Fmt.pf ppf "L %a" (pp_val a) x
       | R x -> Fmt.pf ppf "R %a" (pp_val b) x
 
@@ -223,10 +228,11 @@ module Type = struct
     | Either (ta, tb), Either (tx, ty) ->
       eq ta tx && eq tb ty
     | Abstract ta, Abstract tb ->
-      (match Eq.Witness.eq ta.Eq.wit tb.Eq.wit with
+      (match Eq.Witness.eq ta.eq.Eq.wit tb.eq.Eq.wit with
        | Some Eq.Refl -> true
        | None -> false)
     | _, _ -> false
+
 end
 
 module Env = struct
@@ -361,6 +367,7 @@ module Expr = struct
     | Pair : ('a, 'b, 'a * 'b) binop
     | Eq  : ('a, 'a, bool) binop
     | Cons : ('a, 'a list, 'a list) binop
+    | Get: (int, 'a list, 'a) binop
 
   let pp_binop : type l r v. (l, r, v) binop Fmt.t = fun ppf -> function
     | Add  -> Fmt.string ppf "+"
@@ -370,6 +377,7 @@ module Expr = struct
     | Eq   -> Fmt.string ppf "="
     | Pair -> Fmt.string ppf ","
     | Cons -> Fmt.string ppf "::"
+    | Get  -> Fmt.string ppf "Get"
 
   let binop_to_string x = Fmt.strf "%a" pp_binop x
 
@@ -380,6 +388,7 @@ module Expr = struct
     | R  : 'a Type.t -> ('b, ('a, 'b) Type.either) unop
     | Oky: 'b Type.t -> ('a, ('a, 'b) result) unop
     | Err: 'a Type.t -> ('b, ('a, 'b) result) unop
+    | Prj: (('a, 'b) result, ('a, 'b) Type.either) unop
 
   let pp_unop : type u v. (u, v) unop Fmt.t = fun ppf -> function
     | Fst    -> Fmt.string ppf "fst"
@@ -388,6 +397,7 @@ module Expr = struct
     | R ty   -> Fmt.pf ppf "R:%a" Type.pp ty
     | Oky ty -> Fmt.pf ppf "Ok:%a" Type.pp ty
     | Err ty -> Fmt.pf ppf "Error:%a" Type.pp ty
+    | Prj    -> Fmt.string ppf "prj"
 
   type ('u, 'v) nnop =
     | Arr: 'a Type.t -> ('a, 'a array) nnop
@@ -481,6 +491,10 @@ module Expr = struct
       ) in
     Type.App (Type.Lwt.inj f)
 
+  let prj = function
+    | Ok x    -> Type.L x
+    | Error e -> Type.R e
+
   let rec eval: type e a. (e, a) t -> e -> a = fun x e ->
     match x with
     | Val v        -> v.v
@@ -489,6 +503,7 @@ module Expr = struct
     | Uno (R _, x) -> R (eval x e)
     | Uno (Oky _, x) -> Ok (eval x e)
     | Uno (Err _, x) -> Error (eval x e)
+    | Uno (Prj, x) -> prj (eval x e)
     | Uno (Fst, x) -> fst (eval x e)
     | Uno (Snd, x) -> snd (eval x e)
     | Nar (Arr _, lst) -> List.map (fun x -> eval x e) lst |> Array.of_list
@@ -499,6 +514,7 @@ module Expr = struct
     | Var x -> get x e
     | Lam (_, _, r) -> (fun v -> eval r (e, v))
     | App (f, a) -> (eval f e) (eval a e)
+    | Bin (Get, i, x) -> List.nth (eval x e) (eval i e)
     | Bin (Add, l, r) -> (eval l e) + (eval r e)
     | Bin (Sub, l, r) -> (eval l e) - (eval r e)
     | Bin (Mul, l, r) -> (eval l e) * (eval r e)
@@ -572,6 +588,7 @@ module Expr = struct
     | Val {t=Type.Array t;v=[||];_} -> P.array ~typ:(Type.untype t) [||]
     | Val {v;t;pp;eq}  -> P.value v t pp eq
     | Prm x            -> P.prim (Prim.untype x)
+    | Uno (Prj, x)     -> P.prj (untype x)
     | Uno (Fst, x)     -> P.fst (untype x)
     | Uno (Snd, x)     -> P.snd (untype x)
     | Uno (L r, x)     -> P.left (Type.untype r) (untype x)
@@ -584,6 +601,7 @@ module Expr = struct
     | Opt (_, Some x)  -> P.some (untype x)
     | Ret e            -> P.return (untype e)
     | Bnd (x, f)       -> P.bind (untype x) (untype f)
+    | Bin (Get, i, x)  -> P.get (untype i) (untype x)
     | Bin (Add, x, y)  -> P.(untype x + untype y)
     | Bin (Mul, x, y)  -> P.(untype x * untype y)
     | Bin (Sub, x, y)  -> P.(untype x - untype y)
@@ -626,6 +644,9 @@ module Expr = struct
     | ExpectedPair    of a_expr
     | ExpectedLambda  of a_expr
     | ExpectedEither  of a_expr
+    | ExpectedInt     of a_expr
+    | ExpectedList    of a_expr
+    | ExpectedResult  of a_expr
     | UnboundVariable of int
 
   type error = Parsetree.expr * Parsetree.typ list * kind list
@@ -643,6 +664,9 @@ module Expr = struct
     | ExpectedPair _     -> Fmt.pf ppf "a pair was expected"
     | ExpectedLambda _   -> Fmt.pf ppf "a lambda was expected"
     | ExpectedEither _   -> Fmt.pf ppf "either was expected"
+    | ExpectedInt _      -> Fmt.pf ppf "an int was expected"
+    | ExpectedList _     -> Fmt.pf ppf "a list was expected"
+    | ExpectedResult _   -> Fmt.pf ppf "a result was expected"
     | UnboundVariable n  -> Fmt.pf ppf "unbound variable $%d" n
 
   let pp_error ppf (e, ts, ks) =
@@ -750,6 +774,11 @@ module Expr = struct
         (match Env.equal g' g'' with
          | Some Eq.Refl -> Expr (Uno (Err tl', x'), g', Result (tl', tx'))
          | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+      | Uno (Prj, x) ->
+        (match aux x g with
+         | Expr (x', g', Type.Result (ta, tb)) ->
+           Expr (Uno (Prj, x'), g', Type.Either (ta, tb))
+         | x -> error e g [ ExpectedResult x ])
       | Uno (Fst, x) ->
         (match aux x g with
          | Expr (x', g'', Type.Pair (ta', _)) ->
@@ -780,6 +809,15 @@ module Expr = struct
         (match Env.equal g' g'' with
          | Some Eq.Refl -> Expr (Opt (tr', Some x'), g', Option tr')
          | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+      | Bin (`Get, i, x) ->
+        (match aux i g, aux x g with
+         | Expr (i', gi, Type.Int), Expr (x', gx, Type.List tx') ->
+           (match Env.equal gi gx with
+            | Some Eq.Refl -> Expr (Bin (Get, i', x'), gi, tx')
+            | _ -> error e g [ EnvMismatch { g = Env.V gx; g' = Env.V gi } ])
+         | Expr (_, _, Type.Int), x -> error e g [ ExpectedList x ]
+         | x, Expr (_, _, Type.List _) -> error e g [ ExpectedInt x ]
+         | x, y -> error e g [ ExpectedInt x; ExpectedList y ])
       | Bin (`Pair, a, b) ->
         let Expr (a', g'', ta') = aux a g in
         let Expr (b', g''', tb') = aux b g in

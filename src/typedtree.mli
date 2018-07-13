@@ -17,15 +17,36 @@
 
 module Type: sig
 
-  module Lwt: Higher.Newtype1 with type 'a s = 'a Lwt.t
+  module Lwt: Higher.Newtype1 with type 'a s = 'a Lwt.t and type t = T.lwt
+
   type lwt = Lwt.t
 
-  type ('a, 'b) app = App of ('a, 'b) Higher.app
-  type 'a t = 'a T.t
+  type ('a, 'b) app = ('a, 'b) T.app = App of ('a, 'b) Higher.app
 
   type ('a, 'b) either = ('a, 'b) T.either =
     | L of 'a
     | R of 'b
+
+  type 'a abstract = 'a T.abstract = { eq: 'a Eq.witness; pp: 'a Fmt.t option }
+
+  type 'a t = 'a T.t =
+    | Unit    : unit t
+    | Int     : int t
+    | Int32   : int32 t
+    | Int64   : int64 t
+    | Bool    : bool t
+    | String  : string t
+    | Bytes   : bytes t
+    | Lwt     : lwt t
+    | List    : 'a t -> 'a list t
+    | Array   : 'a t -> 'a array t
+    | Option  : 'a t -> 'a option t
+    | Abstract: 'a abstract -> 'a t
+    | Apply   : 'a t * 'b t -> ('a, 'b) app t
+    | Arrow   : 'a t * 'b t -> ('a -> 'b) t
+    | Pair    : 'a t * 'b t -> ('a * 'b) t
+    | Either  : 'a t * 'b t -> ('a, 'b) either t
+    | Result  : 'a t * 'b t -> ('a, 'b) result t
 
   val equal: 'a t -> 'b t -> ('a, 'b) Eq.refl option
   (** [eq a b] proves than [a] and [b] have the same type if we return [Some
@@ -49,7 +70,7 @@ module Type: sig
   val list: 'a t -> 'a list t
   val option: 'a t -> 'a option t
   val array: 'a t -> 'a array t
-  val abstract: string -> 'a t
+  val abstract: ?pp:'a Fmt.t -> string -> 'a t
 
   val lwt: 'a t -> ('a, lwt) app t
   val apply: 'a t -> 'b t -> ('a, 'b) app t
@@ -114,6 +135,9 @@ module Expr: sig
   type ('a, 'e) t
   (** Type of a typed expression. *)
 
+  type 'a lwt = ('a, Type.lwt) Type.app
+  (** The type for lwt expressions. *)
+
   (** {2 Constructors.} *)
 
   val unit: unit -> ('a, unit) t
@@ -153,6 +177,7 @@ module Expr: sig
 
   val lambda: (string * 'a Type.t) -> ('b * 'a, 'c) t -> ('b, 'a -> 'c) t
   val apply: ('a, 'b -> 'c) t -> ('a, 'b) t -> ('a, 'c) t
+  val return: 'a -> 'a lwt
   val eval: ('e, 'a) t -> 'e -> 'a
 
   (** {2 Infix operators.} *)

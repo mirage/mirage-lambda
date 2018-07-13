@@ -20,11 +20,11 @@ let pp_infix ~infix pp_a pp_b ppf (a, b) =
 
 module Type = struct
 
-  type abstract = A: 'a Eq.witness -> abstract
+  type abstract = A: 'a Eq.witness * 'a Fmt.t option -> abstract
 
-  let pp_abstract ppf (A a) = Fmt.string ppf a.name
+  let pp_abstract ppf (A (a, _)) = Fmt.string ppf a.name
 
-  let equal_abstract (A a) (A b) =
+  let equal_abstract (A (a, _)) (A (b, _)) =
     a.name = b.name && match Eq.Witness.eq a.wit b.wit with
     | Some Eq.Refl -> true
     | _ -> false
@@ -86,7 +86,7 @@ module Type = struct
 
   let arrow a b = Arrow (a, b)
   let either a b = Either (a, b)
-  let abstract a = Abstract (A a)
+  let abstract ?pp a = Abstract (A (a, pp))
   let unsafe_abstract a = Abstract a
   let apply a b = Apply (a, b)
   let result a b = Result (a, b)
@@ -121,8 +121,8 @@ type primitive =
 type arithmetic = [ `Add | `Sub | `Mul | `Div ]
 [@@deriving show, eq]
 
-type binop = [ arithmetic | `Pair | `Eq ]
-and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
+type binop = [ arithmetic | `Pair | `Eq | `Get ]
+and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Prj
 and var = { id : int }
 and expr =
   | Val of value
@@ -158,6 +158,9 @@ let pp_params ppf ts =
   let aux ppf (n, t) = Fmt.pf ppf "%s: %a" n Type.pp t in
   Fmt.pf ppf "@[<2>(%a)@]" Fmt.(list ~sep:(unit ",@ ") aux) ts
 
+let pp_get pp ppf (x, y) =
+  Fmt.pf ppf "@[Get %a %a@]" pp x pp y
+
 let nth ctx n =
   try List.nth ctx n.id
   with Failure _ ->
@@ -166,6 +169,7 @@ let nth ctx n =
 let pp_op pp x =
   match x with
   | `Pair -> Fmt.Dump.pair pp pp
+  | `Get  -> pp_get pp
   | `Eq | #arithmetic as x ->
     let infix = match x with
       | `Add -> "+"
@@ -183,12 +187,12 @@ let pp ppf t =
     match t with
     | Var n -> Fmt.pf ppf "%s$%d" (nth ctx n) n.id
     | Val c -> pp_value ppf c
-    | Lst (t, [])     -> Fmt.pf ppf "([]: %a list)" pp_typ_opt t
+    | Lst (t, [])     -> Fmt.pf ppf "[] %a" pp_typ_opt t
     | Lst (_, l)      -> Fmt.Dump.list pp ppf l
-    | Arr (t, [||])   -> Fmt.pf ppf "([||]: %a array)" pp_typ_opt t
+    | Arr (t, [||])   -> Fmt.pf ppf "[||] %a" pp_typ_opt t
     | Arr (_, a)      -> Fmt.Dump.array pp ppf a
     | Opt (_, Some x) -> Fmt.Dump.option pp ppf (Some x)
-    | Opt (t, None  ) -> Fmt.pf ppf "(None: %a option)" pp_typ_opt t
+    | Opt (t, None  ) -> Fmt.pf ppf "None %a" pp_typ_opt t
     | Ret e           -> Fmt.pf ppf "(return (%a))" pp e
     | Bnd (x, f)      -> Fmt.pf ppf "(%a >>= %a)" pp x pp f
     | Prm { name; _ } -> Fmt.string ppf name
@@ -200,19 +204,14 @@ let pp ppf t =
       let pp = aux (fst r.p :: ctx) in
       Fmt.pf ppf "@[<2>(rec %a: %a@ ->@ @[<2>%a@])@]"
         pp_params [r.p] Type.pp r.r pp r.e
-    | App (f, a) ->
-      Fmt.pf ppf "@[(@[%a@]@ @[%a@])@]" pp f pp a
+    | App (f, a)     -> Fmt.pf ppf "@[(@[%a@]@ @[%a@])@]" pp f pp a
     | Bin (op, a, b) -> pp_op pp op ppf (a, b)
-    | Uno (Fst, a) ->
-      Fmt.pf ppf "@[<2>(fst@ @[%a@])@]" pp a
-    | Uno (Snd, a) ->
-      Fmt.pf ppf "@[<2>(snd@ @[%a@])@]" pp a
-    | Uno (L t, a) ->
-      Fmt.pf ppf "@[<2>L@ @[(%a)@] @[(%a)@]@]" pp a Type.pp t
-    | Uno (R t, a) ->
-      Fmt.pf ppf "@[<2>R@ @[(%a)@] @[(%a)@]@]" Type.pp t pp a
-    | Uno (Ok t, a) ->
-      Fmt.pf ppf "@[<2>Ok@ @[(%a)@] @[(%a)@]@]" pp a Type.pp t
+    | Uno (Prj, a )  -> Fmt.pf ppf "@[<2>(prj@ @[%a@])@]" pp a
+    | Uno (Fst, a)   -> Fmt.pf ppf "@[<2>(fst@ @[%a@])@]" pp a
+    | Uno (Snd, a)   -> Fmt.pf ppf "@[<2>(snd@ @[%a@])@]" pp a
+    | Uno (L t, a)   -> Fmt.pf ppf "@[<2>L@ @[(%a)@] @[(%a)@]@]" pp a Type.pp t
+    | Uno (R t, a)   -> Fmt.pf ppf "@[<2>R@ @[(%a)@] @[(%a)@]@]" Type.pp t pp a
+    | Uno (Ok t, a)  -> Fmt.pf ppf "@[<2>Ok@ @[(%a)@] @[(%a)@]@]" pp a Type.pp t
     | Uno (Error t, a) ->
       Fmt.pf ppf "@[<2>Error@ @[(%a)@] @[(%a)@]@]" Type.pp t pp a
     | Let (t, n, v, f) ->
@@ -253,6 +252,7 @@ let some e = option (Some e)
 let ok t e = Uno (Ok t, e)
 let error t e = Uno (Error t, e)
 let pair a b = Bin (`Pair, a, b)
+let get i x = Bin (`Get, i, x)
 let apply f a = App (f, a)
 let var id = Var { id }
 let match_ s a b = Swt {a; b; s}
@@ -269,6 +269,7 @@ let left rtyp x = Uno (L rtyp, x)
 let right ltyp x = Uno (R ltyp, x)
 let fst x = Uno (Fst, x)
 let snd x = Uno (Snd, x)
+let prj x = Uno (Prj, x)
 
 let let_var t n x y = Let (t, n, x, y)
 

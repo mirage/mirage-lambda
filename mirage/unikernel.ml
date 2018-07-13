@@ -70,20 +70,36 @@ module Main (B: BLOCK) (S: TCP) = struct
          | Lambda.Parsetree.Prm primitive -> Primitives.add k primitive primitives
          | _ -> Fmt.invalid_arg "Invalid expression as primitive")
       Primitives.empty
-      Lambda.[ primitive   "Block.pp_error"           [ formatter; error; ]                     Type.unit                            B.pp_error
-             ; primitive   "Block.pp_write_error"     [ formatter; write_error; ]               Type.unit                            B.pp_write_error
-             ; L.primitive "Block.disconnect"         []                                        Type.(lwt unit)                      B.(disconnect b)
-             ; L.primitive "Block.get_info"           []                                        Type.(lwt info)                      B.(get_info b)
-             ; primitive   "read_write"               [ info ]                                  Type.bool                            (fun b -> b.Mirage_block.read_write)
-             ; primitive   "sector_size"              [ info ]                                  Type.int                             (fun b -> b.Mirage_block.sector_size)
-             ; primitive   "size_sectors"             [ info ]                                  Type.int64                           (fun b -> b.Mirage_block.size_sectors)
-             ; L.primitive "Block.read"               Type.[ int64; list cstruct; ]             Type.(lwt (result unit error))       B.(read b)
-             ; L.primitive "Block.write"              Type.[ int64; list cstruct; ]             Type.(lwt (result unit write_error)) B.(write b)
-             ; primitive   "Cstruct.to_string"        [ cstruct ]                               Type.string                          Cstruct.to_string
-             ; primitive   "Cstruct.of_string"        [ Type.string ]                           cstruct                              (fun s -> Cstruct.of_string s)
-             ; primitive   "Cstruct.blit"             Type.[ cstruct; int; cstruct; int; int; ] Type.unit                            Cstruct.blit
-             ; primitive   "Cstruct.blit_to_string"   Type.[ cstruct; int; bytes; int; int; ]   Type.unit                            Cstruct.blit_to_bytes
-             ; primitive   "Cstruct.blit_from_string" Type.[ string; int; cstruct; int; int; ]  Type.unit                            Cstruct.blit_from_string ],
+      Lambda.[
+        primitive   "Block.pp_error"           [ formatter; error; ]
+          Type.unit                            B.pp_error
+      ; primitive   "Block.pp_write_error"     [ formatter; write_error; ]
+          Type.unit                            B.pp_write_error
+      ; L.primitive "Block.disconnect"         [ Type.unit ]
+          Type.(lwt unit)                      (fun () -> B.disconnect b)
+      ; L.primitive "Block.get_info"           [ Type.unit ]
+          Type.(lwt info)                      (fun () -> B.get_info b)
+      ; primitive   "read_write"               [ info ]
+          Type.bool                            (fun b -> b.Mirage_block.read_write)
+      ; primitive   "sector_size"              [ info ]
+          Type.int                             (fun b -> b.Mirage_block.sector_size)
+      ; primitive   "size_sectors"             [ info ]
+          Type.int64                           (fun b -> b.Mirage_block.size_sectors)
+      ; L.primitive "Block.read"               Type.[ int64; list cstruct; ]
+          Type.(lwt (result unit error))       B.(read b)
+      ; L.primitive "Block.write"              Type.[ int64; list cstruct; ]
+          Type.(lwt (result unit write_error)) B.(write b)
+      ; primitive   "Cstruct.to_string"        [ cstruct ]
+          Type.string                          Cstruct.to_string
+      ; primitive   "Cstruct.of_string"        [ Type.string ]
+          cstruct                              (fun s -> Cstruct.of_string s)
+      ; primitive   "Cstruct.blit"             Type.[ cstruct; int; cstruct; int; int; ]
+          Type.unit                            Cstruct.blit
+      ; primitive   "Cstruct.blit_to_string"   Type.[ cstruct; int; bytes; int; int; ]
+          Type.unit                            Cstruct.blit_to_bytes
+      ; primitive   "Cstruct.blit_from_string" Type.[ string; int; cstruct; int; int; ]
+          Type.unit                            Cstruct.blit_from_string
+      ],
     List.fold_left
       (fun gamma (k, v) -> Gamma.add k v gamma)
       Gamma.empty
@@ -100,30 +116,89 @@ module Main (B: BLOCK) (S: TCP) = struct
       Log.err (fun l -> l "Got %a, closing" S.TCPV4.pp_write_error e);
       S.TCPV4.close flow
 
-  let eval ~blocks ~gamma ~primitives request =
+  let result: type a. a Lambda.Type.t -> a -> (a, _) result Lwt.t =
+    fun ret x ->
+      match ret with
+      | Lambda.Type.Apply (ty, Lambda.Type.Lwt) ->
+        let Lambda.Type.App x = x in
+        let x = Lambda.Type.Lwt.prj x in
+        x >|= fun x ->
+        let x = Lambda.Expr.return x in
+        Ok x
+      | _ ->
+        Lwt.return (Ok x)
+
+  let err fmt = Fmt.kstrf (fun e -> Lwt.return (Error (`Msg e))) fmt
+
+  let eval ~block_size ~blocks ~gamma ~primitives request =
     try
       Log.info (fun l -> l "Parse protobuf request:\n\n%a%!" pp_string request);
 
       let request = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string request) in
       let request = Lambda_protobuf.Pb.decode_request request in
-      let ast, ret, _ = Lambda_protobuf.request ~gamma ~primitives request in
+      let ast, ret, output = Lambda_protobuf.of_request ~gamma ~primitives request in
       let Lambda.Type.V ret = Lambda.Type.typ ret in
-
-      let expected = Lambda.Type.(list AbstractTypes.cstruct @-> list AbstractTypes.cstruct @-> ret) in
-
-      let res = match Lambda.type_and_eval ast expected with
-        | Ok f -> let x = f blocks [] in Ok x
-        | Error e -> Fmt.kstrf (fun e -> Error (`Msg e)) "%a" Lambda.pp_error e in
+      let expected =
+        Lambda.Type.(list AbstractTypes.cstruct
+                     @-> list AbstractTypes.cstruct
+                     @-> ret)
+      in
+      let outputs =
+        List.init
+          (Int64.to_int output)
+          (fun _ -> Cstruct.create (Int64.to_int block_size))
+      in
+      (match Lambda.type_and_eval ast expected with
+       | Error e -> err "%a" Lambda.pp_error e
+       | Ok f    -> result ret (f blocks outputs))
+      >|= fun res ->
 
       let pp_value = Lambda.Type.pp_val ret in
 
       Logs.info (fun l -> l "Process and eval: %a => %a.\n%!"
                     Lambda.Parsetree.pp ast
-                    (Fmt.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
-      Ok ()
+                    (Fmt.Dump.result ~ok:pp_value ~error:Rresult.R.pp_msg) res);
+
+      let res = Rresult.R.map (Lambda.uncast ret) res in
+      let res = Lambda_protobuf.to_reply res in
+      let encoder = Lambda_protobuf.Rpc.Encoder.(default Reply res block_size output) in
+
+      Ok (outputs, encoder)
     with exn ->
-      Logs.err (fun l -> l "Retrieve an error: %s" (Printexc.to_string exn));
-      Error (`Msg (Printexc.to_string exn))
+      Logs.err (fun l -> l "Got an error: %a" Fmt.exn exn);
+      err "%a" Fmt.exn exn
+
+  let send flow (blocks, encoder) =
+    let (>>?) = bind_err flow in
+    let open Lambda_protobuf in
+
+    let src = Cstruct.create 0x8000 in
+    let dst = Cstruct.create 0x8000 in
+
+    let rec loop encoder = match Rpc.Encoder.eval src dst encoder with
+      | `Await t ->
+        let block_n, block_consumed = Rpc.Encoder.block t in
+        let len =
+          min
+            (Cstruct.len src)
+            (Cstruct.len (List.nth blocks (Int64.to_int block_n)) - block_consumed)
+        in
+        Cstruct.blit (List.nth blocks (Int64.to_int block_n)) block_consumed src 0 len;
+        loop (Rpc.Encoder.refill 0 len t)
+
+      | `Flush t ->
+        S.TCPV4.write flow (Cstruct.sub dst 0 (Rpc.Encoder.used_out t)) >>? fun () ->
+        loop (Rpc.Encoder.flush 0 (Cstruct.len dst) t)
+      | `Error (_, err) ->
+        Log.err (fun f ->
+            f "Retrieve an error when we encode reply: %a." Rpc.Encoder.pp_error err);
+        Lwt.return_unit
+      | `End t ->
+        (if Rpc.Encoder.used_out t > 0
+         then S.TCPV4.write flow (Cstruct.sub dst 0 (Rpc.Encoder.used_out t))
+         else Lwt.return_ok ()) >>? fun () ->
+        Lwt.return_unit in
+    loop encoder
 
   let process ~gamma ~primitives flow =
     let dst, dst_port = S.TCPV4.dst flow in
@@ -132,10 +207,15 @@ module Main (B: BLOCK) (S: TCP) = struct
         f "new tcp connection from IP %a on port %d"
           Ipaddr.V4.pp_hum dst dst_port);
 
-    let (>>?) = bind_err flow in
     let buffer = Buffer.create 512 in
     let block_buffer = Cstruct_buffer.create 512 in
-    let decoder = Lambda_protobuf.Rpc.Decoder.default () in
+    let decoder = Lambda_protobuf.Rpc.(Decoder.default Request) in
+
+    let (>>?) v f = v >>= function
+      | Ok v -> f v
+      | Error (`Msg err) ->
+        Log.err (fun f -> f "Got an evaluation error: %s." err);
+        Lwt.return_unit in
 
     let rec loop blocks decoder =
       S.TCPV4.read flow >>= function
@@ -153,7 +233,7 @@ module Main (B: BLOCK) (S: TCP) = struct
           Log.info (fun f -> f "State of the decoder: %a." Lambda_protobuf.Rpc.Decoder.pp decoder);
 
           match Lambda_protobuf.Rpc.Decoder.eval src decoder with
-          | `Await decoder -> decoder, blocks
+          | `Await decoder -> Lwt.return (decoder, blocks)
           | `Flush (decoder, `Protobuf, raw) ->
             Buffer.add_string buffer (Cstruct.to_string raw);
             go blocks (Lambda_protobuf.Rpc.Decoder.flush decoder)
@@ -176,7 +256,7 @@ module Main (B: BLOCK) (S: TCP) = struct
             Logs.warn (fun f ->
                 f "Retrieve an error: %a."
                   Lambda_protobuf.Rpc.Decoder.pp_error err);
-            (Lambda_protobuf.Rpc.Decoder.reset decoder, [])
+            Lwt.return (Lambda_protobuf.Rpc.Decoder.reset decoder, [])
           | `End decoder ->
 
             let blocks =
@@ -190,13 +270,22 @@ module Main (B: BLOCK) (S: TCP) = struct
                    ; block :: blocks)
               else blocks in
 
-            eval ~blocks:(List.map Cstruct.of_string (List.rev blocks)) ~gamma ~primitives (Buffer.contents buffer) |> fun res ->
+            eval
+              ~block_size:(Lambda_protobuf.Rpc.Decoder.block_size decoder)
+              ~blocks:(List.map (fun x -> Cstruct.of_string x) (List.rev blocks))
+              ~gamma
+              ~primitives
+              (Buffer.contents buffer)
+            >>? send flow >|= fun () ->
             Buffer.clear buffer;
-            (Lambda_protobuf.Rpc.Decoder.reset decoder, []) in
+            (Lambda_protobuf.Rpc.Decoder.reset decoder, [])
+        in
 
-        let decoder, blocks = go blocks (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder) in
+        go blocks (Lambda_protobuf.Rpc.Decoder.refill 0 (Cstruct.len src) decoder)
+        >>= fun (decoder, blocks) ->
         loop blocks decoder
-    in loop [] decoder
+    in
+    loop [] decoder
 
   let start b s () =
     let primitives, gamma = make_environment b in

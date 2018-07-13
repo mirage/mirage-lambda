@@ -16,6 +16,7 @@ type t =
   | Pair of (t * t)
   | Either of (t, t) either * Parsetree.Type.t * Parsetree.Type.t
   | Result of (t, t) result * Parsetree.Type.t * Parsetree.Type.t
+  | Return of (t * Parsetree.Type.t)
 
 let option_map f = function
   | Some v -> Some (f v)
@@ -31,7 +32,12 @@ let result_map fa fb = function
   | Ok a -> Ok (fa a)
   | Error b -> Error (fb b)
 
-let unsafe_value : Parsetree.value -> t = fun (Parsetree.V x) ->
+exception Error of string
+
+let err fmt = Fmt.kstrf (fun s -> raise (Error s)) fmt
+
+let unsafe_value : Parsetree.value -> (t, [`Msg of string]) result =
+  fun (Parsetree.V x) ->
   let rec go : type a. a T.t -> a -> t = fun proof value -> match proof with
     | T.Unit -> Unit
     | T.Int -> Int value
@@ -46,5 +52,22 @@ let unsafe_value : Parsetree.value -> t = fun (Parsetree.V x) ->
     | T.Pair (ta, tb) -> Pair (pair_map (go ta) (go tb) value)
     | T.Either (ta, tb) -> Either (either_map (go ta) (go tb) value, Typedtree.Type.untype ta, Typedtree.Type.untype tb)
     | T.Result (ta, tb) -> Result (result_map (go ta) (go tb) value, Typedtree.Type.untype ta, Typedtree.Type.untype tb)
-    | _ -> invalid_arg "Unsafe_value.unsafe_value: invalid type" in
-  go x.t x.v
+    | T.Apply (tx, T.Lwt) ->
+      let Typedtree.Type.App v = value in
+      let v = Typedtree.Type.Lwt.prj v in
+      (* The thread is already resolved by `L.eval`. *)
+      begin match Lwt.state v with
+        | Fail e   -> raise e
+        | Sleep    -> Fmt.invalid_arg "the lwt thread is sleeping"
+        | Return v -> Return (go tx v, Typedtree.Type.untype tx)
+      end
+    | T.Abstract a ->
+      (match a.pp with
+       | Some pp -> err "%a" pp value
+       | None    -> err "<abstract value>")
+    | T.Lwt      -> err "lwt"
+    | T.Arrow _  -> err "<arrow>"
+    | T.Apply _  -> err "<apply>"
+  in
+  try Ok (go x.t x.v)
+  with Error e -> Error (`Msg e)

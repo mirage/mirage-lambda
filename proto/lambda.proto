@@ -76,6 +76,7 @@ enum Binop {
     DIV = 4;
     PAIR = 5;
     EQ = 6;
+    GET = 7;
 }
 
 message Unop {
@@ -85,6 +86,7 @@ message Unop {
     message R { required Type value = 1; }
     message Ok { required Type value = 1; }
     message Error { required Type value = 1; }
+    message Prj { }
 
     oneof t {
         Fst fst = 1;
@@ -93,6 +95,7 @@ message Unop {
         R r = 4;
         Ok ok = 5;
         Error error = 6;
+        Prj prj = 7;
     }
 }
 
@@ -146,6 +149,10 @@ message Value {
         required Type typ_l = 2;
         required Type typ_r = 3;
     }
+    message Return {
+        required Type typ = 1;
+        required Value value = 2;
+    }
 
     oneof t {
         Unit unit = 1;
@@ -161,6 +168,7 @@ message Value {
         Bytes bytes = 11;
         Result result = 12;
         Either either = 13;
+        Return return = 14;
     }
 }
 
@@ -236,4 +244,11 @@ message Request {
   required Expr expr = 1;
   required Type typ = 2;
   required int64 output = 3;
+}
+
+message Reply {
+  oneof t {
+      Value value = 1;
+      string error = 2;
+  }
 }

@@ -91,7 +91,9 @@ rule program t = parse
   | "R"      { p t "R"; R }
   | "L"      { p t "L"; L }
   | "unit"   { p t "unit"; UNIT }
+  | "get"    { p t "get"; GET }
   | "fst"    { p t "FST"; FST }
+  | "prj"    { p t "PRJ"; PRJ }
   | "snd"    { p t "SND"; SND }
   | "let"    { p t "LET"; LET }
   | "in"     { p t "IN"; IN }
@@ -114,6 +116,7 @@ rule program t = parse
   | "result" { p t "result"; S_RESULT }
   | "bool"   { p t "bool"; S_BOOL }
   | "string" { p t "string"; S_STRING }
+  | "Lwt.t"  { p t "Lwt.t"; S_LWT }
   | var as s { p t "VAR %s" s; VAR s }
   | eof      { EOF }
 

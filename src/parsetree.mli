@@ -19,7 +19,7 @@
 
 module Type: sig
 
-  type abstract = A: 'a Eq.witness -> abstract
+  type abstract = A: 'a Eq.witness * 'a Fmt.t option -> abstract
 
   type t = private
     | Unit
@@ -74,7 +74,7 @@ module Type: sig
   val either: t -> t -> t
   val result: t -> t -> t
 
-  val abstract: 'a Eq.witness -> t
+  val abstract: ?pp:'a Fmt.t -> 'a Eq.witness -> t
   val unsafe_abstract: abstract -> t
   val apply: t -> t -> t
 
@@ -87,6 +87,7 @@ module Type: sig
   (** {2 Pretty-printer.} *)
 
   val pp: t Fmt.t
+  val pp_abstract: abstract Fmt.t
   val dump: t Fmt.t
 end
 
@@ -147,11 +148,11 @@ and primitive =
   ; exp  : value list -> value }
 (** A user-defined primitive. *)
 
-and binop =  [ arithmetic | `Pair | `Eq ]
+and binop =  [ arithmetic | `Pair | `Eq | `Get ]
 (** Binary operations. *)
 
 (** Unary operations. *)
-and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ
+and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Prj
 
 (** {2 Pretty-printers.} *)
 
@@ -193,9 +194,11 @@ val of_value: value -> expr
 val lambda: (string * typ) list -> expr -> expr
 
 val pair: expr -> expr -> expr
+val get: expr -> expr -> expr
 
 val fst: expr -> expr
 val snd: expr -> expr
+val prj: expr -> expr
 
 val left: typ -> expr -> expr
 val right: typ -> expr -> expr

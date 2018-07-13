@@ -1,3 +1,20 @@
+let cstruct : Cstruct.t Lambda.Type.t = Lambda.Type.abstract "Cstruct.t"
+let error : string Lambda.Type.t = Lambda.Type.abstract "Block.error"
+
+let gamma =
+  [ "Cstruct.t", (Lambda.Type.abstract_injection cstruct)
+  ; "Block.error", (Lambda.Type.abstract_injection error) ]
+
+let primitives =
+  let niet1 _ = assert false in
+  let niet2 _ _ = assert false in
+  let niet4 _ _ _ _ = assert false in
+  Lambda.[
+    L.primitive "Block.read" Type.[ int64; list cstruct; ] Type.(lwt (result unit error)) niet2;
+    primitive "Cstruct.to_string" [cstruct] Type.string niet1;
+    primitive "Cstruct.blit" Type.[ cstruct; int; cstruct; int; int; ] Type.unit niet4;
+  ]
+
 let pp_chr =
   Fmt.using
     (function '\032' .. '\126' as x -> x
@@ -157,7 +174,12 @@ let receive_reply ic decoder =
       let reply = Buffer.contents buffer_protobuf in
       let decoder = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string reply) in
       let reply = Pb.decode_reply decoder in
-      let reply = of_reply reply in
+      let gamma =
+        List.fold_left (fun acc (k, v) ->
+            Lambda_protobuf.Gamma.add k v acc
+          ) Lambda_protobuf.Gamma.empty gamma
+      in
+      let reply = of_reply ~gamma reply in
 
       let pp ppf = function
         | Ok (Lambda.Parsetree.V { v; pp; _ }) -> pp ppf v
@@ -166,22 +188,6 @@ let receive_reply ic decoder =
       Fmt.(pf stdout) ">>> receive: %a.\n%!" pp reply;
       List.iteri (fun idx block -> Fmt.(pf stdout) "block %d:\n\n%a\n%!" idx pp_string block) (List.rev blocks) in
   go [] decoder
-
-let cstruct : Cstruct.t Lambda.Type.t = Lambda.Type.abstract "Cstruct.t"
-let error : unit Lambda.Type.t = Lambda.Type.abstract "Block.error"
-
-let gamma =
-  [ "Cstruct.t", (Lambda.Type.abstract_injection cstruct)
-  ; "Block.error", (Lambda.Type.abstract_injection error) ]
-
-let primitives =
-  let niet1 _ = assert false in
-  let niet2 _ _ = assert false in
-  Lambda.[
-    L.primitive "Block.read" Type.[ int64; list cstruct; ] Type.(lwt (result unit error)) niet2;
-    primitive "Cstruct.to_string" [cstruct] Type.string niet1;
-    primitive "Cstruct.blit" Type.[ cstruct; int; cstruct; int; int; ] Type.unit (fun _ _ _ _ -> assert false);
-  ]
 
 let repl ?(block_n = 0) ?(block_size = 0) ~block_output (socketo, socketi) blocks =
   let rec go () =

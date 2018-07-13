@@ -265,7 +265,6 @@ let rec value_from : Types.value -> value = function
                  Lambda.Type.pp t
                  Lambda.Type.pp terror)
   | Types.Return { value; _ } -> value_from value
-  | Types.Abstract -> invalid_arg "Impossible to un-serialize an abstract value"
 
 module Option = struct let map f = function Some v -> Some (f v) | None -> None end
 
@@ -286,8 +285,7 @@ let value_to : value -> Types.value = fun v ->
     | Lambda.Value.Either (R value, typl, typr) -> Types.Either { value = Types.Right { value = go value }; typ_l = typ_to typl; typ_r = typ_to typr }
     | Lambda.Value.Result (Ok value, typ_ok, typ_error) -> Types.Result { value = Types.Ok { value = go value }; typ_ok = typ_to typ_ok; typ_error = typ_to typ_error }
     | Lambda.Value.Result (Error value, typ_ok, typ_error) -> Types.Result { value = Types.Error { value = go value }; typ_ok = typ_to typ_ok; typ_error = typ_to typ_error }
-    | Lambda.Value.Return (value, typ) -> Types.Return { typ = typ_to typ; value = go value; }
-    | Lambda.Value.Abstract -> Types.Abstract in
+    | Lambda.Value.Return (value, typ) -> Types.Return { typ = typ_to typ; value = go value; } in
   go (Lambda.Value.unsafe_value v)
 
 let expr_from
@@ -418,5 +416,7 @@ let reply_from
 let reply_to
   : (value, [ `Msg of string ]) result -> Types.reply
   = function
-    | Ok value -> Types.Value (value_to value)
     | Error (`Msg err) -> Types.Error err
+    | Ok (V { v; pp; _ } as value) ->
+      try Types.Value (value_to value)
+      with _ -> Types.Error (Fmt.strf "Invalid value (unserializable): %a" pp v)

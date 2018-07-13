@@ -44,7 +44,7 @@ open Lambda.Parsetree
 module Gamma = Map.Make(String)
 module Primitives = Map.Make(String)
 
-let typ_from ?(gamma = Gamma.empty) =
+let to_typ ?(gamma = Gamma.empty) =
   let rec go : Types.type_ -> Type.t = function
     | Types.Unit -> Type.unit
     | Types.Int -> Type.int
@@ -67,7 +67,7 @@ let typ_from ?(gamma = Gamma.empty) =
       with Not_found -> Fmt.invalid_arg "Abstract type %s not found" witness
   in go
 
-let typ_to =
+let of_typ =
   let rec go : Type.t -> Types.type_ = function
     | Type.Unit -> Types.Unit
     | Type.Int -> Types.Int
@@ -88,7 +88,7 @@ let typ_to =
     | Type.Abstract (Type.A (eq, _)) -> Types.Abstract { witness = eq.Lambda.Eq.name }
   in go
 
-let binop_to : binop -> Types.binop = function
+let to_binop : binop -> Types.binop = function
   | `Add -> Types.Add
   | `Sub -> Types.Sub
   | `Mul -> Types.Mul
@@ -97,13 +97,13 @@ let binop_to : binop -> Types.binop = function
   | `Eq -> Types.Eq
   | `Get -> Types.Get
 
-let unop_to : unop -> Types.unop = function
+let to_unop : unop -> Types.unop = function
   | Fst -> Types.Fst
   | Snd -> Types.Snd
-  | L t -> Types.L { value = typ_to t }
-  | R t -> Types.R { value = typ_to t }
-  | Ok t -> Types.Ok { value = typ_to t }
-  | Error t -> Types.Error { value = typ_to t }
+  | L t -> Types.L { value = of_typ t }
+  | R t -> Types.R { value = of_typ t }
+  | Ok t -> Types.Ok { value = of_typ t }
+  | Error t -> Types.Error { value = of_typ t }
 
 let rec of_value : Types.value -> value = function
   | Types.Unit ->
@@ -124,7 +124,7 @@ let rec of_value : Types.value -> value = function
         pp = Fmt.using Bytes.unsafe_to_string Fmt.string; eq = Pervasives.(=) }
   | Types.Option { typ; value = Some value; } ->
     let V { v; t; pp; eq; } = of_value value in
-    let Lambda.Type.V t' = Lambda.Type.typ (typ_from typ) in
+    let Lambda.Type.V t' = Lambda.Type.typ (to_typ typ) in
     (match Lambda.Type.equal t t' with
      | Some Lambda.Eq.Refl -> V { v = Some v; t = Option t;
                                   pp = Fmt.option pp; eq = opt_eq ~eq }
@@ -132,22 +132,22 @@ let rec of_value : Types.value -> value = function
                  Lambda.Type.pp t
                  Lambda.Type.pp t')
   | Types.Option { typ; value = None; } ->
-    let Lambda.Type.V t = Lambda.Type.typ (typ_from typ) in
+    let Lambda.Type.V t = Lambda.Type.typ (to_typ typ) in
     let pp = Lambda.Type.pp_val t in
     let eq = Lambda.Type.eq_val t in
     V { v = None; t = Option t; pp = Fmt.option pp; eq = opt_eq ~eq }
   | Types.List { typ; value = []; } ->
-    let Lambda.Type.V t = Lambda.Type.typ (typ_from typ) in
+    let Lambda.Type.V t = Lambda.Type.typ (to_typ typ) in
     let pp = Lambda.Type.pp_val t in
     let eq = Lambda.Type.eq_val t in
     V { v = []; t = List t; pp = Fmt.list pp; eq = lst_eq ~eq }
   | Types.Array { typ; value = []; } ->
-    let Lambda.Type.V t = Lambda.Type.typ (typ_from typ) in
+    let Lambda.Type.V t = Lambda.Type.typ (to_typ typ) in
     let pp = Lambda.Type.pp_val t in
     let eq = Lambda.Type.eq_val t in
     V { v = [||]; t = Array t; pp = Fmt.array pp; eq = arr_eq ~eq }
   | Types.List { typ; value; } ->
-    let Lambda.Type.V t' = Lambda.Type.typ (typ_from typ) in
+    let Lambda.Type.V t' = Lambda.Type.typ (to_typ typ) in
     let pp = Lambda.Type.pp_val (List t') in
     let eq = Lambda.Type.eq_val (List t') in
     let rec go acc = function
@@ -169,7 +169,7 @@ let rec of_value : Types.value -> value = function
                      Lambda.Type.pp t) in
     go (V { v = []; t = List t'; pp; eq; }) value
   | Types.Array { typ; value; } ->
-    let Lambda.Type.V t' = Lambda.Type.typ (typ_from typ) in
+    let Lambda.Type.V t' = Lambda.Type.typ (to_typ typ) in
     let pp = Lambda.Type.pp_val (List t') in
     let eq = Lambda.Type.eq_val (List t') in
     let cast (V { v; t; _ }) = match Lambda.Type.equal (List t') t with
@@ -204,8 +204,8 @@ let rec of_value : Types.value -> value = function
     V { v = (a, b); t = Pair (ta, tb); pp = Fmt.pair ppa ppb; eq = pair_eq ~eqa ~eqb }
   | Types.Either { value = Types.Left { value; }; typ_l; typ_r; } ->
     let V { v; t; pp = ppl; eq = eql; } = of_value value in
-    let Lambda.Type.V tl = Lambda.Type.typ (typ_from typ_l) in
-    let Lambda.Type.V tr = Lambda.Type.typ (typ_from typ_r) in
+    let Lambda.Type.V tl = Lambda.Type.typ (to_typ typ_l) in
+    let Lambda.Type.V tr = Lambda.Type.typ (to_typ typ_r) in
 
     let ppr, eqr = Lambda.Type.pp_val tr, Lambda.Type.eq_val tr in
 
@@ -218,8 +218,8 @@ let rec of_value : Types.value -> value = function
                  Lambda.Type.pp tl)
   | Types.Either { value = Types.Right { value; }; typ_l; typ_r; } ->
     let V { v; t; pp = ppr; eq = eqr; } = of_value value in
-    let Lambda.Type.V tl = Lambda.Type.typ (typ_from typ_l) in
-    let Lambda.Type.V tr = Lambda.Type.typ (typ_from typ_r) in
+    let Lambda.Type.V tl = Lambda.Type.typ (to_typ typ_l) in
+    let Lambda.Type.V tr = Lambda.Type.typ (to_typ typ_r) in
 
     let ppl, eql = Lambda.Type.pp_val tl, Lambda.Type.eq_val tl in
 
@@ -232,8 +232,8 @@ let rec of_value : Types.value -> value = function
                  Lambda.Type.pp tl)
   | Types.Result { value = Types.Ok { value; }; typ_ok; typ_error; } ->
     let V { v; t; pp = pp_ok; eq = eq_ok; } = of_value value in
-    let Lambda.Type.V tok = Lambda.Type.typ (typ_from typ_ok) in
-    let Lambda.Type.V terror = Lambda.Type.typ (typ_from typ_error) in
+    let Lambda.Type.V tok = Lambda.Type.typ (to_typ typ_ok) in
+    let Lambda.Type.V terror = Lambda.Type.typ (to_typ typ_error) in
 
     let pp_error, eq_error = Lambda.Type.pp_val terror, Lambda.Type.eq_val terror in
 
@@ -247,8 +247,8 @@ let rec of_value : Types.value -> value = function
                  Lambda.Type.pp tok)
   | Types.Result { value = Types.Error { value; }; typ_ok; typ_error; } ->
     let V { v; t; pp = pp_error; eq = eq_error; } = of_value value in
-    let Lambda.Type.V tok = Lambda.Type.typ (typ_from typ_ok) in
-    let Lambda.Type.V terror = Lambda.Type.typ (typ_from typ_error) in
+    let Lambda.Type.V tok = Lambda.Type.typ (to_typ typ_ok) in
+    let Lambda.Type.V terror = Lambda.Type.typ (to_typ typ_error) in
 
     let pp_ok, eq_ok = Lambda.Type.pp_val tok, Lambda.Type.eq_val tok in
 
@@ -275,27 +275,27 @@ let to_value : value -> (Types.value, [`Msg of string]) result = fun v ->
     | Lambda.Value.Bool value -> Types.Bool { value; }
     | Lambda.Value.String value -> Types.String { value; }
     | Lambda.Value.List (typ, value) ->
-      Types.List { typ = typ_to typ; value = List.map go value; }
+      Types.List { typ = of_typ typ; value = List.map go value; }
     | Lambda.Value.Array (typ, value) ->
-      Types.Array { typ = typ_to typ; value = Array.map go value |> Array.to_list; }
+      Types.Array { typ = of_typ typ; value = Array.map go value |> Array.to_list; }
     | Lambda.Value.Option (typ, value) ->
-      Types.Option { typ = typ_to typ; value = Option.map go value; }
+      Types.Option { typ = of_typ typ; value = Option.map go value; }
     | Lambda.Value.Bytes value -> Types.Bytes { value = Bytes.to_string value; }
     | Lambda.Value.Pair (a, b) -> Types.Pair { a = go a; b = go b; }
     | Lambda.Value.Either (L value, typl, typr) ->
       Types.Either { value = Types.Left { value = go value };
-                     typ_l = typ_to typl; typ_r = typ_to typr }
+                     typ_l = of_typ typl; typ_r = of_typ typr }
     | Lambda.Value.Either (R value, typl, typr) ->
       Types.Either { value = Types.Right { value = go value };
-                     typ_l = typ_to typl; typ_r = typ_to typr }
+                     typ_l = of_typ typl; typ_r = of_typ typr }
     | Lambda.Value.Result (Ok value, typ_ok, typ_error) ->
       Types.Result { value = Types.Ok { value = go value };
-                     typ_ok = typ_to typ_ok; typ_error = typ_to typ_error }
+                     typ_ok = of_typ typ_ok; typ_error = of_typ typ_error }
     | Lambda.Value.Result (Error value, typ_ok, typ_error) ->
       Types.Result { value = Types.Error { value = go value };
-                     typ_ok = typ_to typ_ok; typ_error = typ_to typ_error }
+                     typ_ok = of_typ typ_ok; typ_error = of_typ typ_error }
     | Lambda.Value.Return (value, typ) ->
-      Types.Return { typ = typ_to typ; value = go value; }
+      Types.Return { typ = of_typ typ; value = go value; }
   in
   match Lambda.Value.unsafe_value v with
   | Ok v         -> Ok (go v)
@@ -323,25 +323,25 @@ let of_expr
         (match Primitives.find name primitives with
          | primitive ->
            if String.equal primitive.name name
-           && List.for_all2 equal_typ (List.map (typ_from ?gamma) arguments) primitive.args
-           && equal_typ (typ_from ?gamma return) primitive.ret
+           && List.for_all2 equal_typ (List.map (to_typ ?gamma) arguments) primitive.args
+           && equal_typ (to_typ ?gamma return) primitive.ret
            then prim primitive
            else Fmt.invalid_arg "Remote primitive %s mismatch with local primitive" name
          | exception Not_found -> Fmt.invalid_arg "Primitive %s not found" name)
       | Types.Lst { typ; expr; } ->
-        list ?typ:(Option.map (typ_from ?gamma) typ) (List.map go expr)
+        list ?typ:(Option.map (to_typ ?gamma) typ) (List.map go expr)
       | Types.Arr { typ; expr; } ->
-        array ?typ:(Option.map (typ_from ?gamma) typ) (Array.of_list (List.map go expr))
+        array ?typ:(Option.map (to_typ ?gamma) typ) (Array.of_list (List.map go expr))
       | Types.Opt { typ; expr = None; } ->
-        none (typ_from ?gamma typ)
+        none (to_typ ?gamma typ)
       | Types.Opt { expr = Some expr; _ } ->
         some (go expr)
       | Types.Var { var = id; } ->
         var (Int32.to_int id)
       | Types.Lam { typ; var; expr; } ->
-        lambda [ var, typ_from ?gamma typ ] (go expr)
+        lambda [ var, to_typ ?gamma typ ] (go expr)
       | Types.Rec { ret; name; argument; expr; } ->
-        fix (name, typ_from ?gamma argument) (typ_from ?gamma ret) (go expr)
+        fix (name, to_typ ?gamma argument) (to_typ ?gamma ret) (go expr)
       | Types.App { a; b; } ->
         apply (go a) (go b)
       | Types.Bin { op = Types.Add; a; b; } ->
@@ -363,15 +363,15 @@ let of_expr
       | Types.Uno { op = Types.Snd; x; } ->
         snd (go x)
       | Types.Uno { op = Types.L { value; }; x; } ->
-        left (typ_from ?gamma value) (go x)
+        left (to_typ ?gamma value) (go x)
       | Types.Uno { op = Types.R { value; }; x; } ->
-        right (typ_from ?gamma value) (go x)
+        right (to_typ ?gamma value) (go x)
       | Types.Uno { op = Types.Ok { value; }; x; } ->
-        ok (typ_from ?gamma value) (go x)
+        ok (to_typ ?gamma value) (go x)
       | Types.Uno { op = Types.Error { value }; x; } ->
-        error (typ_from ?gamma value) (go x)
+        error (to_typ ?gamma value) (go x)
       | Types.Let { typ; name; expr; body; } ->
-        let_var (typ_from ?gamma typ) name (go expr) (go body)
+        let_var (to_typ ?gamma typ) name (go expr) (go body)
       | Types.Swt { a; b; s; } ->
         match_ (go s) (go a) (go b)
       | Types.Ret { expr; } ->
@@ -394,32 +394,32 @@ let to_expr : expr -> (Types.expr, [`Msg of string]) result = fun e ->
   let rec go = function
     | Val v -> to_value v >>? fun value -> Types.Val { value }
     | Prm { name; args; ret; _ } ->
-      Types.Prm { value = { name; arguments = List.map typ_to args;
-                            return = typ_to ret; }; }
+      Types.Prm { value = { name; arguments = List.map of_typ args;
+                            return = of_typ ret; }; }
     | Lst (typ, lst) ->
-      Types.Lst { typ = Option.map typ_to typ; expr = List.map go lst; }
+      Types.Lst { typ = Option.map of_typ typ; expr = List.map go lst; }
     | Arr (typ, arr) ->
-      Types.Arr { typ = Option.map typ_to typ;
+      Types.Arr { typ = Option.map of_typ typ;
                   expr = Array.map go arr |> Array.to_list; }
     | Opt (Some typ, opt) ->
-      Types.Opt { typ = typ_to typ; expr = Option.map go opt; }
+      Types.Opt { typ = of_typ typ; expr = Option.map go opt; }
     | Opt (None, _) -> invalid_arg "Optional construction needs to be typed"
     | Ret expr -> Types.Ret { expr = go expr; }
     | Bnd (expr, func) -> Types.Bnd { expr = go expr; func = go func; }
     | Var { id; } -> Types.Var { var = Int32.of_int id; }
     | Lam (typ, var, expr) ->
-      Types.Lam { typ = typ_to typ; var; expr = go expr; }
+      Types.Lam { typ = of_typ typ; var; expr = go expr; }
     | Rec { r = ret; p = (name, argument); e = expr; } ->
-      Types.Rec { ret = typ_to ret
+      Types.Rec { ret = of_typ ret
                 ; name
-                ; argument = typ_to argument
+                ; argument = of_typ argument
                 ; expr = go expr; }
     | App (a, b) -> Types.App { a = go a; b = go b; }
     | Bin (op, a, b) ->
-      Types.Bin { op = binop_to op; a = go a; b = go b; }
-    | Uno (op, x) -> Types.Uno { op = unop_to op; x = go x; }
+      Types.Bin { op = to_binop op; a = go a; b = go b; }
+    | Uno (op, x) -> Types.Uno { op = to_unop op; x = go x; }
     | Let (typ, name, expr, body) ->
-      Types.Let { typ = typ_to typ; name; expr = go expr; body = go body; }
+      Types.Let { typ = of_typ typ; name; expr = go expr; body = go body; }
     | Swt { a; b; s; } -> Types.Swt { a = go a; b = go b; s = go s; }
     | If (s, a, b) -> Types.If { a = go a; b = go b; s = go s; }
   in
@@ -432,14 +432,14 @@ let of_request
     Types.request -> expr * Type.t * int64
   = fun ?gamma ?primitives request ->
     of_expr ?gamma ?primitives request.Types.expr,
-    typ_from ?gamma request.Types.typ, request.Types.output
+    to_typ ?gamma request.Types.typ, request.Types.output
 
 let to_request
   : expr * Type.t * int64 -> (Types.request, [`Msg of string]) result
   = fun (expr, typ, output) ->
     match to_expr expr with
     | Error _ as e -> e
-    | Ok expr -> Ok { Types.expr; typ = typ_to typ ; output }
+    | Ok expr -> Ok { Types.expr; typ = of_typ typ ; output }
 
 let of_reply
   : Types.reply -> (value, [ `Msg of string ]) result

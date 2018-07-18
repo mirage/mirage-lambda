@@ -30,6 +30,14 @@ let port =
   in
   Key.(create "port" Arg.(opt int 1234 doc))
 
+let disk =
+  let doc =
+    Key.Arg.info
+      ~doc:"The path to the block device to use."
+      ["d"; "disk"]
+  in
+  Key.(create "disk" Arg.(opt string "./disk.img" doc))
+
 let () =
   register "lambda" [
     foreign "Unikernel.Main"
@@ -37,8 +45,8 @@ let () =
                 ; package "lambda-protobuf"
                 ; package "rresult" ]
       ~deps:[abstract img]
-      ~keys:[Key.abstract port]
+      ~keys:[Key.abstract port; Key.abstract disk]
       (block @-> stackv4 @-> job)
-    $ block_of_file "disk.img"
+    $ block_of_file "XXX"
     $ generic_stackv4 default_network
   ]

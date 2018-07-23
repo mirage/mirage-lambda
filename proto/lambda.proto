@@ -113,7 +113,7 @@ message Value {
     message Int64 { required int64 value = 1; }
     message Bool { required bool value = 1; }
     message String { required string value = 1; }
-    message Bytes { required string value = 1; }
+    message Bytes { required bytes value = 1; }
     message List {
         required Type typ = 1;
         repeated Value value = 2;

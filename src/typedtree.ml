@@ -398,7 +398,7 @@ module Expr = struct
     | R  : 'a Type.t -> ('b, ('a, 'b) Type.either) unop
     | Oky: 'b Type.t -> ('a, ('a, 'b) result) unop
     | Err: 'a Type.t -> ('b, ('a, 'b) result) unop
-    | Prj: (('a, 'b) result, ('a, 'b) Type.either) unop
+    | Prj: (('a, 'b) result, ('b, 'a) Type.either) unop
     | Not: (int, int) unop
 
   let pp_unop : type u v. (u, v) unop Fmt.t = fun ppf -> function
@@ -504,8 +504,8 @@ module Expr = struct
     Type.App (Type.Lwt.inj f)
 
   let prj = function
-    | Ok x    -> Type.L x
-    | Error e -> Type.R e
+    | Ok x    -> Type.R x
+    | Error e -> Type.L e
 
   let rec eval: type e a. (e, a) t -> e -> a = fun x e ->
     match x with
@@ -801,7 +801,7 @@ module Expr = struct
       | Uno (Prj, x) ->
         (match aux x g with
          | Expr (x', g', Type.Result (ta, tb)) ->
-           Expr (Uno (Prj, x'), g', Type.Either (ta, tb))
+           Expr (Uno (Prj, x'), g', Type.Either (tb, ta))
          | x -> error e g [ ExpectedResult x ])
       | Uno (Fst, x) ->
         (match aux x g with

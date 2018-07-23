@@ -118,11 +118,11 @@ type primitive =
   ; exp  : value list -> value [@equal fun _ _ -> true] }
 [@@deriving show, eq]
 
-type arithmetic = [ `Add | `Sub | `Mul | `Div ]
+type arithmetic = [ `Add | `Sub | `Mul | `Div | `ShiftL | `ShiftR | `Xor | `Or | `And ]
 [@@deriving show, eq]
 
 type binop = [ arithmetic | `Pair | `Eq | `Get ]
-and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Prj
+and unop = Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Prj | Not
 and var = { id : int }
 and expr =
   | Val of value
@@ -177,6 +177,11 @@ let pp_op pp x =
       | `Mul -> "*"
       | `Div -> "/"
       | `Eq  -> "="
+      | `ShiftL -> "<<"
+      | `ShiftR -> ">>"
+      | `Xor -> "^"
+      | `Or -> "|"
+      | `And -> "&"
     in
     pp_infix ~infix pp pp
 
@@ -206,6 +211,7 @@ let pp ppf t =
         pp_params [r.p] Type.pp r.r pp r.e
     | App (f, a)     -> Fmt.pf ppf "@[(@[%a@]@ @[%a@])@]" pp f pp a
     | Bin (op, a, b) -> pp_op pp op ppf (a, b)
+    | Uno (Not, a )  -> Fmt.pf ppf "@[<2>(~@ @[%a@])@]" pp a
     | Uno (Prj, a )  -> Fmt.pf ppf "@[<2>(prj@ @[%a@])@]" pp a
     | Uno (Fst, a)   -> Fmt.pf ppf "@[<2>(fst@ @[%a@])@]" pp a
     | Uno (Snd, a)   -> Fmt.pf ppf "@[<2>(snd@ @[%a@])@]" pp a
@@ -289,3 +295,10 @@ let ( + ) a b = Bin (`Add, a, b)
 let ( * ) a b = Bin (`Mul, a, b)
 let ( - ) a b = Bin (`Sub, a, b)
 let ( / ) a b = Bin (`Div, a, b)
+
+let ( << ) a b = Bin (`ShiftL, a, b)
+let ( >> ) a b = Bin (`ShiftR, a, b)
+let ( lor ) a b = Bin (`Or, a, b)
+let ( lxor ) a b = Bin (`Xor, a, b)
+let ( land ) a b = Bin (`And, a, b)
+let lnot x = Uno (Not, x)

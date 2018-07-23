@@ -77,6 +77,11 @@ enum Binop {
     PAIR = 5;
     EQ = 6;
     GET = 7;
+    SHIFTL = 8;
+    SHIFTR = 9;
+    OR = 10;
+    XOR = 11;
+    AND = 12;
 }
 
 message Unop {
@@ -87,6 +92,7 @@ message Unop {
     message Ok { required Type value = 1; }
     message Error { required Type value = 1; }
     message Prj { }
+    message Not { }
 
     oneof t {
         Fst fst = 1;
@@ -96,6 +102,7 @@ message Unop {
         Ok ok = 5;
         Error error = 6;
         Prj prj = 7;
+        Not not = 8;
     }
 }
 

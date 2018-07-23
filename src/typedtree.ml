@@ -364,6 +364,11 @@ module Expr = struct
     | Mul : (int, int, int) binop
     | Sub : (int, int, int) binop
     | Div : (int, int, int) binop
+    | ShiftL : (int, int, int) binop
+    | ShiftR : (int, int, int) binop
+    | Xor : (int, int, int) binop
+    | Or : (int, int, int) binop
+    | And : (int, int, int) binop
     | Pair : ('a, 'b, 'a * 'b) binop
     | Eq  : ('a, 'a, bool) binop
     | Cons : ('a, 'a list, 'a list) binop
@@ -378,6 +383,11 @@ module Expr = struct
     | Pair -> Fmt.string ppf ","
     | Cons -> Fmt.string ppf "::"
     | Get  -> Fmt.string ppf "Get"
+    | ShiftL -> Fmt.string ppf "<<"
+    | ShiftR -> Fmt.string ppf ">>"
+    | Xor  -> Fmt.string ppf "^"
+    | Or   -> Fmt.string ppf "|"
+    | And  -> Fmt.string ppf "&"
 
   let binop_to_string x = Fmt.strf "%a" pp_binop x
 
@@ -389,6 +399,7 @@ module Expr = struct
     | Oky: 'b Type.t -> ('a, ('a, 'b) result) unop
     | Err: 'a Type.t -> ('b, ('a, 'b) result) unop
     | Prj: (('a, 'b) result, ('a, 'b) Type.either) unop
+    | Not: (int, int) unop
 
   let pp_unop : type u v. (u, v) unop Fmt.t = fun ppf -> function
     | Fst    -> Fmt.string ppf "fst"
@@ -398,6 +409,7 @@ module Expr = struct
     | Oky ty -> Fmt.pf ppf "Ok:%a" Type.pp ty
     | Err ty -> Fmt.pf ppf "Error:%a" Type.pp ty
     | Prj    -> Fmt.string ppf "prj"
+    | Not    -> Fmt.string ppf "~"
 
   type ('u, 'v) nnop =
     | Arr: 'a Type.t -> ('a, 'a array) nnop
@@ -506,6 +518,7 @@ module Expr = struct
     | Uno (Prj, x) -> prj (eval x e)
     | Uno (Fst, x) -> fst (eval x e)
     | Uno (Snd, x) -> snd (eval x e)
+    | Uno (Not, x) -> lnot (eval x e)
     | Nar (Arr _, lst) -> List.map (fun x -> eval x e) lst |> Array.of_list
     | Opt (_, Some x) -> Some (eval x e)
     | Opt (_, None)   -> None
@@ -522,6 +535,11 @@ module Expr = struct
     | Bin (Pair, l, r) -> (eval l e, eval r e)
     | Bin (Eq, l, r) -> (eval l e) = (eval r e)
     | Bin (Cons, x, r) -> (eval x e) :: (eval r e)
+    | Bin (ShiftL, a, b) -> (eval a e) lsl (eval b e)
+    | Bin (ShiftR, a, b) -> (eval a e) lsr (eval b e)
+    | Bin (Xor, a, b) -> (eval a e) lxor (eval b e)
+    | Bin (Or, a, b) -> (eval a e) lor (eval b e)
+    | Bin (And, a, b) -> (eval a e) land (eval b e)
     | Let (_, _, a, f) ->
       eval f (e, (eval a e))
     | Swt { s; a; b; } ->
@@ -595,6 +613,7 @@ module Expr = struct
     | Uno (R l, x)     -> P.right (Type.untype l) (untype x)
     | Uno (Oky e, x)   -> P.ok (Type.untype e) (untype x)
     | Uno (Err o, x)   -> P.error (Type.untype o) (untype x)
+    | Uno (Not, x)     -> P.lnot (untype x)
     | Nar (Arr t, [])  -> P.array ~typ:(Type.untype t) [||]
     | Nar (Arr _, l)   -> P.array (List.map untype l |> Array.of_list)
     | Opt (t, None)    -> P.none (Type.untype t)
@@ -616,6 +635,11 @@ module Expr = struct
         | Val {v=[];_} -> List.rev acc
         | expr -> List.rev (untype expr :: acc) in
       P.list (go [] e)
+    | Bin (ShiftL, x, y) -> P.(untype x << untype y)
+    | Bin (ShiftR, x, y) -> P.(untype x >> untype y)
+    | Bin (Or, x, y)   -> P.(untype x lor untype y)
+    | Bin (Xor, x, y)  -> P.(untype x lxor untype y)
+    | Bin (And, x, y)  -> P.(untype x land untype y)
     | Var x            -> P.var (Var.to_int x)
     | Lam (t, n, e)    -> P.lambda [n, Type.untype t] (untype e)
     | App (a, b)       -> P.apply (untype a) (untype b)
@@ -793,6 +817,13 @@ module Expr = struct
             | Some Eq.Refl -> Expr (Uno (Snd, x'), g', tb')
             | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
          | wexpr -> error e g [ ExpectedPair wexpr ])
+      | Uno (Not, x) ->
+        (match aux x g with
+         | Expr (x', g'', Type.Int) ->
+           (match Env.equal g' g'' with
+            | Some Eq.Refl -> Expr (Uno (Not, x'), g', Type.Int)
+            | _ -> error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ])
+         | Expr (_, _, t) -> error e g [ TypMismatch { a = Type.V t; b = Type.V Type.Int } ])
       | Opt (tr, None) ->
         let tr = match tr with Some t -> t | None -> failwith "cannot type None" in
         let Type.V tr' = Type.typ tr in
@@ -866,6 +897,11 @@ module Expr = struct
           | `Sub -> Sub
           | `Mul -> Mul
           | `Div -> Div
+          | `ShiftL -> ShiftL
+          | `ShiftR -> ShiftR
+          | `Or -> Or
+          | `Xor -> Xor
+          | `And -> And
         in
         (match aux l g, aux r g with
          | Expr (l', g', Type.Int),

@@ -103,7 +103,7 @@ type typ = Type.t
 type var = {id: int}
 
 (** Arithmetic operations. *)
-type arithmetic = [ `Add | `Sub | `Mul | `Div ]
+type arithmetic = [ `Add | `Sub | `Mul | `Div | `ShiftL | `ShiftR | `Xor | `Or | `And ]
 
 type expr = private
   | Val of value
@@ -152,7 +152,7 @@ and binop =  [ arithmetic | `Pair | `Eq | `Get ]
 (** Binary operations. *)
 
 (** Unary operations. *)
-and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Prj
+and unop =  Fst | Snd | L of typ | R of typ | Ok of typ | Error of typ | Prj | Not
 
 (** {2 Pretty-printers.} *)
 
@@ -222,3 +222,9 @@ val ( + ): expr -> expr -> expr
 val ( - ): expr -> expr -> expr
 val ( * ): expr -> expr -> expr
 val ( / ): expr -> expr -> expr
+val ( << ): expr -> expr -> expr
+val ( >> ): expr -> expr -> expr
+val ( lor ): expr -> expr -> expr
+val ( land ): expr -> expr -> expr
+val ( lxor ): expr -> expr -> expr
+val lnot: expr -> expr

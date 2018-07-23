@@ -97,6 +97,11 @@ let to_binop : binop -> Types.binop = function
   | `Pair -> Types.Pair
   | `Eq -> Types.Eq
   | `Get -> Types.Get
+  | `ShiftL -> Types.Shiftl
+  | `ShiftR -> Types.Shiftr
+  | `Or -> Types.Or
+  | `Xor -> Types.Xor
+  | `And -> Types.And
 
 let to_unop : unop -> Types.unop = function
   | Prj -> Types.Prj
@@ -106,6 +111,7 @@ let to_unop : unop -> Types.unop = function
   | R t -> Types.R { value = of_typ t }
   | Ok t -> Types.Ok { value = of_typ t }
   | Error t -> Types.Error { value = of_typ t }
+  | Not -> Types.Not
 
 let of_value ~gamma x =
   let to_typ = to_typ ~gamma in
@@ -366,6 +372,16 @@ let of_expr
         (go a) = (go b) (* XXX(dinosaure): we use Parsetree.(=). *)
       | Types.Bin { op = Types.Get; a; b } ->
         get (go a) (go b)
+      | Types.Bin { op = Types.Shiftl; a; b; } ->
+        (go a) << (go b)
+      | Types.Bin { op = Types.Shiftr; a; b; } ->
+        (go a) >> (go b)
+      | Types.Bin { op = Types.Or; a; b; } ->
+        (go a) lor (go b)
+      | Types.Bin { op = Types.Xor; a; b; } ->
+        (go a) lxor (go b)
+      | Types.Bin { op = Types.And; a; b; } ->
+        (go a) land (go b)
       | Types.Uno { op = Types.Fst; x; } ->
         fst (go x)
       | Types.Uno { op = Types.Prj; x; } ->
@@ -380,6 +396,8 @@ let of_expr
         ok (to_typ value) (go x)
       | Types.Uno { op = Types.Error { value }; x; } ->
         error (to_typ value) (go x)
+      | Types.Uno { op = Types.Not; x; } ->
+        lnot (go x)
       | Types.Let { typ; name; expr; body; } ->
         let_var (to_typ typ) name (go expr) (go body)
       | Types.Swt { a; b; s; } ->

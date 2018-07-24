@@ -97,6 +97,11 @@ let to_binop : binop -> Types.binop = function
   | `Pair -> Types.Pair
   | `Eq -> Types.Eq
   | `Get -> Types.Get
+  | `ShiftL -> Types.Shiftl
+  | `ShiftR -> Types.Shiftr
+  | `Or -> Types.Or
+  | `Xor -> Types.Xor
+  | `And -> Types.And
 
 let to_unop : unop -> Types.unop = function
   | Prj -> Types.Prj
@@ -106,6 +111,7 @@ let to_unop : unop -> Types.unop = function
   | R t -> Types.R { value = of_typ t }
   | Ok t -> Types.Ok { value = of_typ t }
   | Error t -> Types.Error { value = of_typ t }
+  | Not -> Types.Not
 
 let of_value ~gamma x =
   let to_typ = to_typ ~gamma in
@@ -124,7 +130,7 @@ let of_value ~gamma x =
     | Types.String { value; } ->
       V { v = value; t = String; pp = Fmt.string; eq = Pervasives.(=) }
     | Types.Bytes { value; } ->
-      V { v = Bytes.of_string value; t = Bytes;
+      V { v = value; t = Bytes;
           pp = Fmt.using Bytes.unsafe_to_string Fmt.string; eq = Pervasives.(=) }
     | Types.Option { typ; value = Some value; } ->
       let V { v; t; pp; eq; } = go value in
@@ -286,7 +292,7 @@ let to_value : value -> (Types.value, [`Msg of string]) result = fun v ->
       Types.Array { typ = of_typ typ; value = Array.map go value |> Array.to_list; }
     | Lambda.Value.Option (typ, value) ->
       Types.Option { typ = of_typ typ; value = Option.map go value; }
-    | Lambda.Value.Bytes value -> Types.Bytes { value = Bytes.to_string value; }
+    | Lambda.Value.Bytes value -> Types.Bytes { value; }
     | Lambda.Value.Pair (a, b) -> Types.Pair { a = go a; b = go b; }
     | Lambda.Value.Either (L value, typl, typr) ->
       Types.Either { value = Types.Left { value = go value };
@@ -366,6 +372,16 @@ let of_expr
         (go a) = (go b) (* XXX(dinosaure): we use Parsetree.(=). *)
       | Types.Bin { op = Types.Get; a; b } ->
         get (go a) (go b)
+      | Types.Bin { op = Types.Shiftl; a; b; } ->
+        (go a) << (go b)
+      | Types.Bin { op = Types.Shiftr; a; b; } ->
+        (go a) >> (go b)
+      | Types.Bin { op = Types.Or; a; b; } ->
+        (go a) lor (go b)
+      | Types.Bin { op = Types.Xor; a; b; } ->
+        (go a) lxor (go b)
+      | Types.Bin { op = Types.And; a; b; } ->
+        (go a) land (go b)
       | Types.Uno { op = Types.Fst; x; } ->
         fst (go x)
       | Types.Uno { op = Types.Prj; x; } ->
@@ -380,6 +396,8 @@ let of_expr
         ok (to_typ value) (go x)
       | Types.Uno { op = Types.Error { value }; x; } ->
         error (to_typ value) (go x)
+      | Types.Uno { op = Types.Not; x; } ->
+        lnot (go x)
       | Types.Let { typ; name; expr; body; } ->
         let_var (to_typ typ) name (go expr) (go body)
       | Types.Swt { a; b; s; } ->

@@ -71,7 +71,13 @@ module Main (B: BLOCK) (S: TCP) = struct
          | _ -> Fmt.invalid_arg "Invalid expression as primitive")
       Primitives.empty
       Lambda.[
-        primitive   "Block.pp_error"           [ formatter; error; ]
+        primitive   "stdout"                   [ ] formatter Format.(formatter_of_out_channel stdout)
+      ; primitive   "stderr"                   [ ] formatter Format.(formatter_of_out_channel stderr)
+      ; primitive   "Block.error_to_string"    [ error; ]
+          Type.string                          (Format.asprintf "%a%!" B.pp_error)
+      ; primitive   "Block.write_error_to_string" [ write_error ]
+          Type.string                          (Format.asprintf "%a%!" B.pp_write_error)
+      ; primitive   "Block.pp_error"           [ formatter; error; ]
           Type.unit                            B.pp_error
       ; primitive   "Block.pp_write_error"     [ formatter; write_error; ]
           Type.unit                            B.pp_write_error
@@ -89,16 +95,52 @@ module Main (B: BLOCK) (S: TCP) = struct
           Type.(lwt (result unit error))       B.(read b)
       ; L.primitive "Block.write"              Type.[ int64; list cstruct; ]
           Type.(lwt (result unit write_error)) B.(write b)
-      ; primitive   "Cstruct.to_string"        [ cstruct ]
-          Type.string                          Cstruct.to_string
-      ; primitive   "Cstruct.of_string"        [ Type.string ]
-          cstruct                              (fun s -> Cstruct.of_string s)
+      ; primitive   "Cstruct.to_bytes"         [ cstruct ]
+          Type.bytes                           Cstruct.to_bytes
+      ; primitive   "Cstruct.of_bytes"         [ Type.bytes ]
+          cstruct                              (fun s -> Cstruct.of_bytes s)
       ; primitive   "Cstruct.blit"             Type.[ cstruct; int; cstruct; int; int; ]
           Type.unit                            Cstruct.blit
-      ; primitive   "Cstruct.blit_to_string"   Type.[ cstruct; int; bytes; int; int; ]
+      ; primitive   "Cstruct.blit_to_bytes"    Type.[ cstruct; int; bytes; int; int; ]
           Type.unit                            Cstruct.blit_to_bytes
-      ; primitive   "Cstruct.blit_from_string" Type.[ string; int; cstruct; int; int; ]
-          Type.unit                            Cstruct.blit_from_string
+      ; primitive   "Cstruct.blit_from_bytes"  Type.[ bytes; int; cstruct; int; int; ]
+          Type.unit                            Cstruct.blit_from_bytes
+      ; primitive   "Cstruct.get_uint8"        Type.[ cstruct; int; ]
+          Type.int                             Cstruct.get_uint8
+      ; primitive   "Cstruct.set_uint8"        Type.[ cstruct; int; int; ]
+          Type.unit                            Cstruct.set_uint8
+      ; primitive   "Cstruct.LE.get_uint16"    Type.[ cstruct; int; ]
+          Type.int                             Cstruct.LE.get_uint16
+      ; primitive   "Cstruct.LE.get_uint32"    Type.[ cstruct; int; ]
+          Type.int32                           Cstruct.LE.get_uint32
+      ; primitive   "Cstruct.LE.get_uint64"    Type.[ cstruct; int; ]
+          Type.int64                           Cstruct.LE.get_uint64
+      ; primitive   "Cstruct.BE.get_uint16"    Type.[ cstruct; int; ]
+          Type.int                             Cstruct.BE.get_uint16
+      ; primitive   "Cstruct.BE.get_uint32"    Type.[ cstruct; int; ]
+          Type.int32                           Cstruct.BE.get_uint32
+      ; primitive   "Cstruct.BE.get_uint64"    Type.[ cstruct; int; ]
+          Type.int64                           Cstruct.BE.get_uint64
+      ; primitive   "Cstruct.LE.set_uint16"    Type.[ cstruct; int; int; ]
+          Type.unit                            Cstruct.LE.set_uint16
+      ; primitive   "Cstruct.LE.set_uint32"    Type.[ cstruct; int; int32; ]
+          Type.unit                            Cstruct.LE.set_uint32
+      ; primitive   "Cstruct.LE.set_uint64"    Type.[ cstruct; int; int64; ]
+          Type.unit                            Cstruct.LE.set_uint64
+      ; primitive   "Cstruct.BE.set_uint16"    Type.[ cstruct; int; int; ]
+          Type.unit                            Cstruct.BE.set_uint16
+      ; primitive   "Cstruct.BE.set_uint32"    Type.[ cstruct; int; int32; ]
+          Type.unit                            Cstruct.BE.set_uint32
+      ; primitive   "Cstruct.BE.set_uint64"    Type.[ cstruct; int; int64; ]
+          Type.unit                            Cstruct.BE.set_uint64
+      ; primitive   "int64_of_int"             Type.[ int; ]
+          Type.int64                           Int64.of_int
+      ; primitive   "int64_to_int"             Type.[ int64; ]
+          Type.int                             Int64.to_int
+      ; primitive   "int32_of_int"             Type.[ int; ]
+          Type.int32                           Int32.of_int
+      ; primitive   "int32_to_int"             Type.[ int32 ]
+          Type.int                             Int32.to_int
       ],
     List.fold_left
       (fun gamma (k, v) -> Gamma.add k v gamma)
@@ -129,6 +171,11 @@ module Main (B: BLOCK) (S: TCP) = struct
         Lwt.return (Ok x)
 
   let err fmt = Fmt.kstrf (fun e -> Lwt.return (Error (`Msg e))) fmt
+  let list_init n f =
+    let rec go acc = function
+      | 0 -> List.rev acc
+      | n -> go (f n :: acc) (n - 1) in
+    go [] n
 
   let eval ~block_size ~blocks ~gamma ~primitives request =
     try
@@ -144,7 +191,7 @@ module Main (B: BLOCK) (S: TCP) = struct
                      @-> ret)
       in
       let outputs =
-        List.init
+        list_init
           (Int64.to_int output)
           (fun _ -> Cstruct.create (Int64.to_int block_size))
       in

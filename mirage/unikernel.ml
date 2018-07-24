@@ -96,14 +96,14 @@ module Main (B: BLOCK) (S: TCP) = struct
       ; L.primitive "Block.write"              Type.[ int64; list cstruct; ]
           Type.(lwt (result unit write_error)) B.(write b)
       ; primitive   "Cstruct.to_bytes"         [ cstruct ]
-          Type.string                          Cstruct.to_bytes
+          Type.bytes                           Cstruct.to_bytes
       ; primitive   "Cstruct.of_bytes"         [ Type.bytes ]
           cstruct                              (fun s -> Cstruct.of_bytes s)
       ; primitive   "Cstruct.blit"             Type.[ cstruct; int; cstruct; int; int; ]
           Type.unit                            Cstruct.blit
       ; primitive   "Cstruct.blit_to_bytes"    Type.[ cstruct; int; bytes; int; int; ]
           Type.unit                            Cstruct.blit_to_bytes
-      ; primitive   "Cstruct.blit_from_bytes"  Type.[ string; int; cstruct; int; int; ]
+      ; primitive   "Cstruct.blit_from_bytes"  Type.[ bytes; int; cstruct; int; int; ]
           Type.unit                            Cstruct.blit_from_bytes
       ; primitive   "Cstruct.get_uint8"        Type.[ cstruct; int; ]
           Type.int                             Cstruct.get_uint8

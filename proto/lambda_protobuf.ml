@@ -130,7 +130,7 @@ let of_value ~gamma x =
     | Types.String { value; } ->
       V { v = value; t = String; pp = Fmt.string; eq = Pervasives.(=) }
     | Types.Bytes { value; } ->
-      V { v = Bytes.of_string value; t = Bytes;
+      V { v = value; t = Bytes;
           pp = Fmt.using Bytes.unsafe_to_string Fmt.string; eq = Pervasives.(=) }
     | Types.Option { typ; value = Some value; } ->
       let V { v; t; pp; eq; } = go value in
@@ -292,7 +292,7 @@ let to_value : value -> (Types.value, [`Msg of string]) result = fun v ->
       Types.Array { typ = of_typ typ; value = Array.map go value |> Array.to_list; }
     | Lambda.Value.Option (typ, value) ->
       Types.Option { typ = of_typ typ; value = Option.map go value; }
-    | Lambda.Value.Bytes value -> Types.Bytes { value = Bytes.to_string value; }
+    | Lambda.Value.Bytes value -> Types.Bytes { value; }
     | Lambda.Value.Pair (a, b) -> Types.Pair { a = go a; b = go b; }
     | Lambda.Value.Either (L value, typl, typr) ->
       Types.Either { value = Types.Left { value = go value };

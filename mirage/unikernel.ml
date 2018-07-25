@@ -178,11 +178,23 @@ module Main (B: BLOCK) (S: TCP) = struct
     go [] n
 
   let eval ~block_size ~blocks ~gamma ~primitives request =
+    let allocated_outputs = ref None in
+    let request_extracted = ref None in
+
+    (* XXX(dinosaure): order (and control flow) to set references is __very__
+       important to know where computation leaks exception - and by this way, be
+       able to respond the best error message to the client.
+
+       TODO(dinosaure): wrap this stuff in result monad. *)
+
     try
       Log.info (fun l -> l "Parse protobuf request:\n\n%a%!" pp_string request);
 
       let request = Pbrt.Decoder.of_bytes (Bytes.unsafe_of_string request) in
       let request = Lambda_protobuf.Pb.decode_request request in
+
+      request_extracted := Some request;
+
       let ast, ret, output = Lambda_protobuf.of_request ~gamma ~primitives request in
       let Lambda.Type.V ret = Lambda.Type.typ ret in
       let expected =
@@ -195,6 +207,9 @@ module Main (B: BLOCK) (S: TCP) = struct
           (Int64.to_int output)
           (fun _ -> Cstruct.create (Int64.to_int block_size))
       in
+
+      allocated_outputs := Some (output, outputs);
+
       (match Lambda.type_and_eval ast expected with
        | Error e -> err "%a" Lambda.pp_error e
        | Ok f    -> result ret (f blocks outputs))
@@ -211,9 +226,28 @@ module Main (B: BLOCK) (S: TCP) = struct
       let encoder = Lambda_protobuf.Rpc.Encoder.(default Reply res block_size output) in
 
       Ok (outputs, encoder)
-    with exn ->
-      Logs.err (fun l -> l "Got an error: %a" Fmt.exn exn);
-      err "%a" Fmt.exn exn
+    with exn -> match !allocated_outputs, !request_extracted with
+      | Some (output, outputs), _ ->
+        (* XXX(dinosaure): exception leaks after [Lambda_protobuf.of_request]. *)
+        Logs.err (fun l -> l "Got an error with allocated outputs: %a" Fmt.exn exn);
+        let res = Lambda_protobuf.to_reply (Rresult.R.error_msgf "%a" Fmt.exn exn) in
+        let encoder = Lambda_protobuf.Rpc.Encoder.(default Reply res block_size output) in
+        Lwt.return_ok (outputs, encoder)
+      | None, Some request ->
+        (* XXX(dinosaure): exceptions leaks after [Lambda_protobuf.Pb.decode_request] and
+           before [Lambda_protobuf.of_request]. *)
+        let output = Lambda_protobuf.output_of_request request in
+        let outputs =
+          list_init
+            (Int64.to_int output)
+            (fun _ -> Cstruct.create (Int64.to_int block_size)) in
+        let res = Lambda_protobuf.to_reply (Rresult.R.error_msgf "%a" Fmt.exn exn) in
+        let encoder = Lambda_protobuf.Rpc.Encoder.(default Reply res block_size output) in
+        Lwt.return_ok (outputs, encoder)
+      | None, None ->
+        (* XXX(dinosaure): exception leaks before [Lambda_protobuf.Pb.decode_request]. *)
+        Logs.err (fun l -> l "Got an error: %a" Fmt.exn exn);
+        err "%a" Fmt.exn exn
 
   let send flow (blocks, encoder) =
     let (>>?) = bind_err flow in

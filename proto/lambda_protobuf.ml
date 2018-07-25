@@ -463,6 +463,9 @@ let of_request
     of_expr ~gamma ?primitives request.Types.expr,
     to_typ ~gamma request.Types.typ, request.Types.output
 
+let output_of_request : Types.request -> int64 =
+  fun request -> request.Types.output
+
 let to_request
   : expr * Type.t * int64 -> (Types.request, [`Msg of string]) result
   = fun (expr, typ, output) ->

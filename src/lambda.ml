@@ -144,6 +144,8 @@ module L = struct
       | Some Eq.Refl -> let Type.App v = v in Some (Type.Lwt.prj v)
       | None         -> None
 
+  let uncast : type a. a Lwt.t Type.t -> (a, Type.lwt) Type.app -> Parsetree.value = Typedtree.Value.untype_lwt
+
   let type_and_eval
     : type a. Parsetree.expr -> (a, Type.lwt) Type.app typ ->
       (a Lwt.t, error) result

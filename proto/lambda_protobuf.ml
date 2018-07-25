@@ -113,7 +113,11 @@ let to_unop : unop -> Types.unop = function
   | Error t -> Types.Error { value = of_typ t }
   | Not -> Types.Not
 
-let of_value ~gamma x =
+let state (Lambda.Type.App x) = match Lwt.state (Lambda.Type.Lwt.prj x) with
+  | Return x -> Some x
+  | _ -> None
+
+let of_value ~gamma ?(unwrap = true) x =
   let to_typ = to_typ ~gamma in
   let rec go: Types.value -> value = function
     | Types.Unit ->
@@ -271,8 +275,22 @@ let of_value ~gamma x =
                    Lambda.Type.pp t
                    Lambda.Type.pp terror)
     | Types.Return { value; _ } ->
+      if unwrap
       (* Client automatically unwrap toplevel lwt values. *)
-      go value
+      then go value
+      else
+        let V { v; t; pp; eq } = go value in
+        let pp ppf x = match state x with
+          | Some x -> pp ppf x
+          | _      -> Fmt.string ppf "<unresolved lwt thread"
+        in
+        let eq x y = match state x, state y with
+          | Some x, Some y -> eq x y
+          | _ -> false
+        in
+        let t = Lambda.Type.lwt t in
+        let v = Lambda.Expr.return v in
+        V { v; t; pp; eq }
   in
   go x
 
@@ -318,7 +336,7 @@ let of_expr
     ?primitives:primitive Primitives.t ->
     Types.expr -> expr
   = fun ?(gamma = Gamma.empty) ?(primitives = Primitives.empty) ->
-    let of_value = of_value ~gamma in
+    let of_value = of_value ~gamma ~unwrap:false in
     let to_typ = to_typ ~gamma in
     let rec go : Types.expr -> expr = function
       | Types.Val { value = Types.Unit; } -> unit

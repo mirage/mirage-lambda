@@ -111,6 +111,8 @@ module L: sig
   (** [cast v typ] unwraps LWT value [v] and proves type of it is equivalent to
      [ty]. *)
 
+  val uncast: 'a Lwt.t typ -> ('a, Type.lwt) Type.app -> Parsetree.value
+
   val type_and_eval:
     Parsetree.expr -> ('a, Type.lwt) Type.app typ -> ('a Lwt.t, error) result
     (** [type_and_eval unsafe_lwt_expr ty] tries to type [unsafe_lwt_expr] to

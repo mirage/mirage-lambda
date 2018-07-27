@@ -1027,22 +1027,48 @@ module Expr = struct
                 Some Eq.Refl, Some Eq.Refl,
                 Some Eq.Refl ->
                 Expr (Brc { s = s'; a = a'; b = b'; }, g'', Type.Apply (ar, Type.Lwt))
-              | _, _, _, _, _ -> assert false)
-            | _, _ -> assert false)
+              | _, _, _, _, _ ->
+                Log.err (fun l -> l "Swt");
+                error e g [ TypMismatch { a = Type.V l'; b = Type.V l'' }
+                          ; TypMismatch { a = Type.V r'; b = Type.V r'' }
+                          ; EnvMismatch { g = Env.V ag''; g' = Env.V g'' }
+                          ; EnvMismatch { g = Env.V bg''; g' = Env.V g'' }
+                          ; TypMismatch { a = Type.V ar; b = Type.V br } ])
+            | Expr (_, ag'', _),
+              Expr (_, bg'', _) ->
+              Log.err (fun l -> l "Swt");
+              error e g [ EnvMismatch { g = Env.V ag''; g' = Env.V (l' :: ag'') }
+                        ; EnvMismatch { g = Env.V bg''; g' = Env.V (r' :: bg'') } ])
          | wexpr ->
            Log.err (fun l -> l "Swt");
            error e g [ ExpectedEither wexpr ])
+      | Rec {r=Parsetree.Type.Apply (rtyp, Parsetree.Type.Lwt); p=(n, ptyp); e} ->
+        let Type.V r = Type.typ rtyp in
+        let Type.V p = Type.typ ptyp in
+        let te = Type.Apply (Type.Either (p, r), Type.Lwt) in
+        let tb = Type.Arrow (p, Type.Apply (r, Type.Lwt)) in
+        (match aux e (ptyp :: g) with
+         | Expr (e', Env.(tp' :: g''), (Type.Apply (Type.Either (_, _), Type.Lwt) as tr')) ->
+           (match Type.equal tr' te, Type.equal tp' p, Env.equal g' g'' with
+            | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
+              Expr (efix (n, p) r e', g', tb)
+            | Some Eq.Refl, None, _ ->
+              error e g [ TypMismatch { a = Type.V tp'; b = Type.V p }]
+            | None, Some Eq.Refl, _ ->
+              error e g [ TypMismatch { a = Type.V tr'; b = Type.V te }]
+            | Some Eq.Refl, Some Eq.Refl, None ->
+              error e g [ EnvMismatch { g = Env.V g'; g' = Env.V g'' } ]
+            | None, None, _ ->
+              error e g [ TypMismatch { a = Type.V tp'; b = Type.V p };
+                          TypMismatch { a = Type.V tr'; b = Type.V te }])
+         | Expr (_, g', _) ->
+           error e g [ EnvMismatch { g = Env.(V (p :: g')); g' = Env.V g' }])
       | Rec {r=rtyp; p=(n, ptyp); e }  ->
         let Type.V r = Type.typ rtyp in
         let Type.V p = Type.typ ptyp in
         let te = Type.Either (p, r) in
         let tb = Type.Arrow (p, r) in
         (match aux e (ptyp :: g) with
-         | Expr (e', Env.(te' :: g''), Type.Apply (tr, Type.Lwt)) ->
-           (match Type.equal tr te, Type.equal te' p, Env.equal g' g'' with
-            | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
-              Expr (efix (n, p) r e', g', Type.Arrow (p, Type.Apply (r, Type.Lwt)))
-            | _ -> assert false)
          | Expr (e', Env.(te' :: g''), tr) ->
            (match Type.equal tr te, Type.equal te' p, Env.equal g' g'' with
             | Some Eq.Refl, Some Eq.Refl, Some Eq.Refl ->
